@@ -1,0 +1,9 @@
+# Exact Linux build/test dependency versions for Python 3.12 and 3.13.
+# Runtime dependencies: none. Direct requirements live in pyproject.toml.
+# Install this file before the editable package (see README.md).
+iniconfig==2.3.1
+packaging==26.3
+pluggy==1.6.0
+Pygments==2.21.0
+pytest==9.1.1
+setuptools==84.0.0

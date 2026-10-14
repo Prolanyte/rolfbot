@@ -1,9 +1,10 @@
 # Rolfbot modernization roadmap
 
-Planning baseline: **14 October 2026**. Only Phase 0 documentation and repository
-hygiene are delivered here. Every runtime change, service integration and
-deployment below is future work. See the [README](../README.md) for the observed
-legacy defects and [YouTube research](YOUTUBE_RESEARCH.md) for the music decision.
+Planning baseline and Milestone 1 validation: **14 October 2026**. Phase 0 and
+**Milestone 1 are complete**. The delivered package is an offline foundation;
+Milestones 2–7, all external integrations and deployment remain future work.
+See the [README](../README.md) for tested setup and commands, and
+[YouTube research](YOUTUBE_RESEARCH.md) for the conditional music decision.
 
 The intended scale is one process serving two existing Discord servers, with
 roughly 10–12 people in the larger server. Preserve Rolfbot's helpful, casual
@@ -13,8 +14,8 @@ friend-group personality without adding unnecessary infrastructure or tools.
 
 | Milestone | Priority and objective | Dependencies | Completion gate |
 | --- | --- | --- | --- |
-| 0. Documentation | Establish an accurate baseline | Source inspection and current research | Links, ignore rules and scope verified; legacy source unchanged |
-| 1. Runtime foundation | Make future development reproducible and testable | Phase 0 | Validated configuration, parseable modules, offline tests and documented dependencies |
+| 0. Documentation — complete | Establish an accurate baseline | Source inspection and current research | Links, ignore rules and scope verified; legacy source unchanged |
+| 1. Runtime foundation — complete | Make future development reproducible and testable | Phase 0 | Validated configuration, parseable modules, offline tests and documented dependencies |
 | 2. Usage protection | Enforce persistent quotas before paid access | Milestone 1 | Atomic reservation and restart/concurrency tests pass |
 | 3. OpenAI and billing | Deliver bounded asynchronous AI requests | Milestones 1–2; owner's billing setup before live calls | Mocked failures pass; later authorized smoke test confirms model and accounting |
 | 4. Discord and scheduling | Restore commands and periodic messages safely | Milestones 1–3 | Slash commands, two-server isolation and reconnect/scheduling tests pass |
@@ -22,43 +23,63 @@ friend-group personality without adding unnecessary infrastructure or tools.
 | 6. Release readiness | Establish a releasable, tested build | Milestones 1–4; 5 if music enabled | Test matrix, configuration and operational review complete |
 | 7. Production deployment | Deploy independently of the existing website | Milestone 6 and separate deployment authorization | Service, restart, resource limits and rollback verified |
 
-## 1. Runtime foundation — recommended next development milestone
+## 1. Runtime foundation — complete
 
-**Objective:** create a small, testable application structure before restoring
-network behavior.
+**Objective achieved:** a small, installable, testable application structure with
+all external functionality disabled. The old `rolfbot7.py` was removed; Git
+history preserves its implementation and persona. Its syntax error and obsolete
+SDK code are no longer part of the active runtime.
 
-- Select and document a supported Python version compatible with Ubuntu 24.04
-  and the chosen libraries. Add a dependency manifest and reproducible version
-  constraints only after validating them; no versions are pinned in Phase 0.
-- Repair the parse error in the later implementation task. Separate startup,
-  configuration, Discord handlers, AI access, usage storage and scheduling just
-  enough to test them independently. Imports must not connect to Discord.
-- Replace `Intents.all()` and the legacy SDK interface in the appropriate later
-  milestones; keep unfinished AI and music paths disabled meanwhile.
-- Validate required credentials at startup without printing their values. Define
-  an explicit local configuration-loading method; the existing script does not
-  read `.env` files automatically.
-- Establish structured logging, secret redaction, graceful shutdown and a
-  central error boundary. Avoid logging prompt contents by default.
-- Add an offline test harness with fake Discord/OpenAI clients and an injectable
-  clock; no paid calls or service credentials needed for ordinary tests.
+Delivered components:
 
-Proposed configuration names below are **not implemented**:
+- A conventional `src/rolfbot` package with `python -m rolfbot`, typed settings,
+  logging setup and an asyncio CLI lifecycle. There are no empty future modules
+  or duplicate executables. Imports are quiet and do not connect to services.
+- Linux CPython **3.12 and 3.13** support, tested on **3.12.15 and 3.13.16**.
+  Python 3.12 remains the Ubuntu 24.04 production baseline. `pyproject.toml`
+  declares zero third-party runtime dependencies, setuptools **84.0.0** for
+  builds and pytest **9.1.1** for development; `requirements-dev.lock` pins the
+  full build/test dependency set.
+- Explicit environment-only configuration. No dotenv dependency or implicit
+  `.env` loading. The owner can supply process variables directly now and via
+  a protected systemd environment file at the later deployment milestone.
+- Safe configuration errors and credential-free offline validation. Credential
+  requirements are opt-in parameters to the settings loader for future callers;
+  they validate values without enabling integrations. Placeholder/empty or
+  whitespace-containing required credentials fail without echoing their values.
+- Consistent stderr logs for journald, redaction of configured credential values,
+  and omission of exception/stack details even at DEBUG. No prompt input exists.
+- `check-config` validates settings and exits offline. With valid configuration,
+  `run` refuses with exit code 3 until Milestones 2–4 are implemented. SIGINT/SIGTERM cancel async
+  work, run cleanup and restore handlers; no continuous service is started.
+- An offline pytest harness that clears service settings, blocks network access
+  and guards subprocess imports. `monkeypatch`, ordinary callables and `tmp_path`
+  support later fake clients, clocks and temporary databases without implementing
+  those components prematurely.
 
-| Setting | Planned meaning |
+| Setting | Milestone 1 status / future meaning |
 | --- | --- |
-| `OPENAI_API_KEY`, `DISCORD_BOT_TOKEN` | Retain the existing credential names |
-| `OPENAI_MODEL` | Default to `gpt-6-luna`; validate model changes and costs |
-| `OPENAI_REASONING_EFFORT` | Start with `none`; evaluate `low` only if needed |
-| `ROLFBOT_GUILD_CHANNELS` | Validated private mapping of both guilds to AI, music and periodic-message channels; finalize serialization during implementation |
-| `ROLFBOT_DATABASE_PATH` | Absolute path to persistent SQLite state outside release directories |
-| `ROLFBOT_TIMEZONE` | Default `Europe/Oslo`; quota calendar timezone |
+| `ROLFBOT_LOG_LEVEL` | Implemented; default INFO, validated standard level names |
+| `ROLFBOT_TIMEZONE` | Implemented; default Europe/Oslo, validated against installed IANA data |
+| `OPENAI_API_KEY`, `DISCORD_BOT_TOKEN` | Recognized and hidden from settings representations; optional/unused offline |
+| `OPENAI_MODEL` | Future-only, ignored now; planned default gpt-6-luna with no unapproved fallback |
+| `OPENAI_REASONING_EFFORT` | Future-only, ignored now; planned default none, evaluate low only if justified |
+| `ROLFBOT_GUILD_CHANNELS` | Future-only, ignored now; private two-guild channel mapping |
+| `ROLFBOT_DATABASE_PATH` | Future-only, ignored now; persistent SQLite state outside release directories |
 
-**Acceptance:** source parses, tests import without network access, invalid or
-missing settings fail clearly, and a fresh environment can run the offline test
-suite using documented dependency versions. Do not claim a working live bot yet.
+**Acceptance evidence:** 47 offline tests passed on each tested Python version.
+All source/tests compile. Editable installation (3.13) and regular wheel
+installation (3.12) succeeded in isolated environments; both passed `pip check`.
+CLI help/configuration checks and failed startup were exercised from outside the
+checkout. Import tripwires observed no network calls, no SDKs are runtime
+requirements, and credential/error redaction and signal cleanup were tested.
 
-## 2. Persistent anti-abuse protection
+**Milestone 1 is ready to close; no acceptance gaps remain.** This does not claim
+production VM compatibility, working external integrations or service-level
+shutdown guarantees for components that do not exist yet. No production access,
+paid API call, Discord connection or billing change was performed.
+
+## 2. Persistent anti-abuse protection — next milestone
 
 **Objective:** all AI entry points share one accounting service and cannot bypass
 limits through parallel requests, server switching or restarts.
@@ -174,7 +195,8 @@ continue, from enforced project/organization spend caps. Hard-limit errors use
 HTTP 429 with `project_spend_limit_exceeded` or
 `organization_spend_limit_exceeded`. Enforcement may lag slightly, so **$2 is
 not an absolute guarantee against any overrun**. Account settings have not been
-inspected or changed in Phase 0; verify the actual controls before live use.
+inspected or changed in Phase 0 or Milestone 1; verify the actual controls before
+live use.
 [OpenAI spend limits](https://developers.openai.com/api/docs/guides/spend-limits).
 
 The daily quotas complement the billing controls; request counts alone are not
@@ -276,12 +298,14 @@ waiting days or hitting real rate limits.
 
 **Acceptance:** automated checks pass from a clean environment; known defects are
 resolved or disabled explicitly; manual tests record dates, versions and outcomes.
-The README is then updated with an actually tested installation procedure.
+The README is then extended with an actually tested live-bot installation
+procedure; Milestone 1 only verifies the offline foundation's installation.
 
 ## 7. Separate production deployment milestone
 
 **Target:** the existing Ubuntu 24.04 Vultr VM serving `nilsherman.no` through
-nginx as a static site. No production access or changes are part of Phase 0.
+nginx as a static site. No production access or changes were made in Phase 0 or
+Milestone 1.
 
 - Run as a dedicated, unprivileged Linux service user with an isolated virtual
   environment and versioned release directories. Keep persistent SQLite state
@@ -324,4 +348,4 @@ separate feasibility gate passed.
 | VM resource ceilings and maintenance window | Deployment planning | Measure available headroom; protect the existing website |
 
 No project, key, card, provider service, Discord setting or deployment resource
-has been created or configured by this documentation work.
+has been created or configured during Phase 0 or Milestone 1.
