@@ -1,8 +1,9 @@
 # Rolfbot modernization roadmap
 
-Planning baseline and Milestone 1 validation: **14 October 2026**. Phase 0 and
-**Milestone 1 are complete**. The delivered package is an offline foundation;
-Milestones 2–7, all external integrations and deployment remain future work.
+Planning baseline and Milestones 1–2 validation: **14 October 2026**. Phase 0 and
+**Milestones 1 and 2 are complete**. The package delivers an offline foundation
+and persistent SQLite usage protection. Milestones 3–7, all external integrations
+and deployment remain future work; the live bot is disabled.
 See the [README](../README.md) for tested setup and commands, and
 [YouTube research](YOUTUBE_RESEARCH.md) for the conditional music decision.
 
@@ -16,7 +17,7 @@ friend-group personality without adding unnecessary infrastructure or tools.
 | --- | --- | --- | --- |
 | 0. Documentation — complete | Establish an accurate baseline | Source inspection and current research | Links, ignore rules and scope verified; legacy source unchanged |
 | 1. Runtime foundation — complete | Make future development reproducible and testable | Phase 0 | Validated configuration, parseable modules, offline tests and documented dependencies |
-| 2. Usage protection | Enforce persistent quotas before paid access | Milestone 1 | Atomic reservation and restart/concurrency tests pass |
+| 2. Usage protection — complete | Enforce persistent quotas before paid access | Milestone 1 | Atomic reservation, lifecycle, restart, calendar and concurrency tests pass on Python 3.12/3.13 |
 | 3. OpenAI and billing | Deliver bounded asynchronous AI requests | Milestones 1–2; owner's billing setup before live calls | Mocked failures pass; later authorized smoke test confirms model and accounting |
 | 4. Discord and scheduling | Restore commands and periodic messages safely | Milestones 1–3 | Slash commands, two-server isolation and reconnect/scheduling tests pass |
 | 5. Optional music | Decide feasibility, then implement if approved | Milestone 4; research and playback gates | Local and Vultr evidence plus acceptable terms/maintenance decision, or music disabled |
@@ -48,16 +49,16 @@ Delivered components:
   they validate values without enabling integrations. Placeholder/empty or
   whitespace-containing required credentials fail without echoing their values.
 - Consistent stderr logs for journald, redaction of configured credential values,
-  and omission of exception/stack details even at DEBUG. No prompt input exists.
+  and omission of exception/stack details even at DEBUG. No prompt content is logged.
 - `check-config` validates settings and exits offline. With valid configuration,
-  `run` refuses with exit code 3 until Milestones 2–4 are implemented. SIGINT/SIGTERM cancel async
+  `run` refuses with exit code 3 until Milestones 3–4 are implemented. SIGINT/SIGTERM cancel async
   work, run cleanup and restore handlers; no continuous service is started.
 - An offline pytest harness that clears service settings, blocks network access
   and guards subprocess imports. `monkeypatch`, ordinary callables and `tmp_path`
   support later fake clients, clocks and temporary databases without implementing
   those components prematurely.
 
-| Setting | Milestone 1 status / future meaning |
+| Setting | Current status / future meaning |
 | --- | --- |
 | `ROLFBOT_LOG_LEVEL` | Implemented; default INFO, validated standard level names |
 | `ROLFBOT_TIMEZONE` | Implemented; default Europe/Oslo, validated against installed IANA data |
@@ -65,7 +66,7 @@ Delivered components:
 | `OPENAI_MODEL` | Future-only, ignored now; planned default gpt-6-luna with no unapproved fallback |
 | `OPENAI_REASONING_EFFORT` | Future-only, ignored now; planned default none, evaluate low only if justified |
 | `ROLFBOT_GUILD_CHANNELS` | Future-only, ignored now; private two-guild channel mapping |
-| `ROLFBOT_DATABASE_PATH` | Future-only, ignored now; persistent SQLite state outside release directories |
+| `ROLFBOT_DATABASE_PATH` | Implemented in Milestone 2; optional offline, explicit absolute file path required for usage storage; production state outside release directories |
 
 **Acceptance evidence:** 47 offline tests passed on each tested Python version.
 All source/tests compile. Editable installation (3.13) and regular wheel
@@ -79,10 +80,15 @@ production VM compatibility, working external integrations or service-level
 shutdown guarantees for components that do not exist yet. No production access,
 paid API call, Discord connection or billing change was performed.
 
-## 2. Persistent anti-abuse protection — next milestone
+## 2. Persistent anti-abuse protection — complete
 
-**Objective:** all AI entry points share one accounting service and cannot bypass
-limits through parallel requests, server switching or restarts.
+**Objective achieved:** an offline accounting component enforces persistent limits
+across independent connections, guild contexts and restarts. Every future AI entry
+point must use this component; no API or Discord entry point is enabled yet.
+
+`usage.py` defines limits, validation and typed results. `usage_store.py` provides
+async reservation, dispatch, completion, refund and read-only status operations.
+See the [README contracts and recovery guidance](../README.md#persistent-usage-protection).
 
 | Protection | Required limit |
 | --- | --- |
@@ -90,22 +96,24 @@ limits through parallel requests, server switching or restarts.
 | AI requests globally | 100 per Oslo calendar day, including scheduled AI messages |
 | Per-user cooldown | 30 seconds across both servers, surviving restarts |
 | User input | At most 1,000 characters, checked before reservation/API dispatch |
-| AI output | At most 512 output tokens per API attempt |
+| AI output — future Milestone 3 requirement | At most 512 output tokens per API attempt; SQLite cannot enforce generation parameters |
 
 ### Reservation and failure policy
 
-1. Validate guild/channel access and input first. Count characters explicitly as
-   Unicode code points; reject empty or oversized input without calling OpenAI.
-2. Use SQLite tables for daily user/global usage, per-user cooldown expiry and
-   reservations keyed by a unique interaction/job attempt ID. The user key must
-   be Discord user ID alone, not `(guild_id, user_id)`.
+1. Future handlers validate guild/channel access first. The implemented component
+   validates identifiers and input before storage, counts Unicode code points and
+   rejects blank, malformed or oversized input without reserving capacity.
+2. Version-1 SQLite `attempts` records are the source of truth for daily counts,
+   with indexed day/user queries and unique interaction/job attempt IDs. Separate
+   `cooldowns` records preserve user expiry; `metadata` fixes the timezone.
+   User identity is Discord user ID alone, not `(guild_id, user_id)`.
 3. In one short write transaction (for example `BEGIN IMMEDIATE`), check the
    cooldown and both quotas, reject duplicate attempt IDs, reserve capacity,
    and persist cooldown expiry. Commit **before** any billable request. Never
    hold the transaction open during network I/O. Handle lock contention with
    bounded waits outside Discord's event loop; database failure denies AI access.
-4. Persist dispatch state before sending. Record completion and available token
-   usage afterward. Disable automatic SDK retries initially: one reservation
+4. Persist dispatch state before sending. Record completion afterward; recording
+   API token usage belongs to Milestone 3. Disable automatic SDK retries initially: one reservation
    permits one API attempt. Any future retry must obtain its own allowance and
    fit a bounded retry policy; no invisible extra paid attempts.
 5. Refund capacity only when it is provable that no request was dispatched, such
@@ -129,10 +137,41 @@ do not impersonate a Discord user. Each separate API generation counts once;
 generating separate messages for two channels consumes two global requests.
 At exhaustion, skip or defer with a bounded policy, never bypass the limit.
 
-**Acceptance:** independent SQLite connections racing for the last slot admit
-exactly one request; quotas and cooldowns survive restart; replay and duplicate
-refunds do not change accounting twice. Denials give friendly messages with the
-next eligible time. Unit tests prove all entry points share this service.
+**Implementation details:** every mutation uses `BEGIN IMMEDIATE` and commits
+before returning a grant. Connections run in worker threads with a 250 ms SQLite
+lock timeout, DELETE rollback journaling and `synchronous=EXTRA`; there is no WAL
+dependency or transaction held during network work. Cancellation/lost commit
+acknowledgement may retain capacity conservatively. Structured denials expose
+safe reason codes and next eligibility where calculable, never SQL errors or
+database paths. Future Discord code supplies friendly wording.
+
+Initialization is explicit and creates owner-only files in an existing directory.
+Normal operations cannot recreate missing storage. Existing empty/corrupt files,
+unknown schemas and timezone mismatches fail closed. Imports and `check-config`
+perform no database setup. Retain all attempts, including refunded tombstones;
+no expiry, replay, automatic migration or cleanup can reopen capacity. Production
+backup/recovery must preserve usage and cooldowns together and reconcile any
+usage missing from an older snapshot before enabling AI.
+
+**Acceptance evidence:** **142 offline tests passed on CPython 3.12.15 and
+3.13.16**, including all Milestone 1 regressions. Real file-backed tests cover
+20th/21st and 100th/101st boundaries, shared guild/user/global allowances, scheduled
+jobs, Unicode validation, exact cooldown expiry, month/year/midnight boundaries,
+both Oslo DST transitions, backward clocks and original reservation dates.
+Separate overlapping SQLite connections race for the final personal/global slot
+and admit exactly one winner; duplicate dispatch and dispatch/refund races are
+also tested. A fresh child process exits without cleanup after committed reserve/
+dispatch operations, and the parent verifies retained usage and cooldowns.
+Tests cover lock and commit failures, transactional rollback, idempotent lifecycle
+operations, lost acknowledgements, cancelled workers, corrupt/inaccessible storage
+and schema failures. Imports open no database or network connection, diagnostics
+remain sanitized, `run` stays disabled, both source/test compilations pass and
+`git diff --check` is clean.
+
+**Ready for Milestone 3's mocked integration work.** Runtime dependencies remain
+standard library only. No OpenAI/Discord call, scheduler, music functionality,
+VM access or billing verification/change was added. Production storage durability,
+backup restoration and release migration still require operational validation.
 
 ## 3. OpenAI integration and cost protection
 
@@ -178,25 +217,21 @@ limit; also bound/split the message safely at delivery.
 
 ### Owner-managed billing prerequisite
 
-Before any live API test or production use, the owner will manually:
-
-- Create a dedicated API project named **Rolfbot** and a suitably restricted key.
-- Set the project's monthly spending limit to **$2 USD**, explicitly enable
-  **hard-limit enforcement**, and set a spending warning at **$1 USD**.
-- Create/configure the planned Revolut virtual card in **OpenAI organization
-  billing**. Confirm payment-method acceptance there; no card details in the bot,
-  environment example, repository or deployment scripts.
-- Prefer prepaid credit with **automatic recharging disabled**, where available.
-  Check minimum purchase, expiry, taxes and account eligibility before funding;
-  a prepaid balance is not the same as the project's monthly spending limit.
+On 14 October 2026, the owner reported manually configuring a dedicated
+**Rolfbot** project, GPT-6 Luna as the intended model, a restricted key, a **$2 USD
+enforced monthly limit**, a **$1 USD alert**, and **$5 USD prepaid credit** with
+**automatic recharging disabled**. This is owner-reported status: the agent did
+not inspect, verify or change these settings during Milestone 2. No credentials
+or payment details were read. Live API tests still need separate authorization;
+the next milestone starts with offline mocks.
 
 Current OpenAI documentation distinguishes alerts, which allow traffic to
 continue, from enforced project/organization spend caps. Hard-limit errors use
 HTTP 429 with `project_spend_limit_exceeded` or
 `organization_spend_limit_exceeded`. Enforcement may lag slightly, so **$2 is
 not an absolute guarantee against any overrun**. Account settings have not been
-inspected or changed in Phase 0 or Milestone 1; verify the actual controls before
-live use.
+inspected or changed by the agent in Phase 0 or Milestones 1–2. The owner remains
+responsible for maintaining the controls before live use.
 [OpenAI spend limits](https://developers.openai.com/api/docs/guides/spend-limits).
 
 The daily quotas complement the billing controls; request counts alone are not
@@ -305,7 +340,7 @@ procedure; Milestone 1 only verifies the offline foundation's installation.
 
 **Target:** the existing Ubuntu 24.04 Vultr VM serving `nilsherman.no` through
 nginx as a static site. No production access or changes were made in Phase 0 or
-Milestone 1.
+Milestones 1–2.
 
 - Run as a dedicated, unprivileged Linux service user with an isolated virtual
   environment and versioned release directories. Keep persistent SQLite state
@@ -342,10 +377,10 @@ separate feasibility gate passed.
 | --- | --- | --- |
 | Which channels receive AI, music and scheduled messages? | Configuration/Discord work | Private per-guild mapping; no public numeric IDs |
 | Periodic cadence and downtime policy | Scheduling work | Independent 2–7-day schedule per configured channel; no catch-up burst |
-| Billing/card availability and acceptable small enforcement overrun | Before paid calls | Rolfbot project, $2 enforced limit, $1 alert, prepaid without auto-recharge |
+| Maintain billing safeguards and authorize any live test | Before paid calls | Owner reports Rolfbot project, $2 enforced limit, $1 alert and $5 prepaid without auto-recharge; not agent-verified |
 | YouTube rights, maintenance burden and optional provider/account use | Before music investigation beyond public samples | No authenticated cookies; keep music optional |
 | Fallback if YouTube fails on Vultr | Before enabling music | Rights-cleared local/approved audio or link sharing |
 | VM resource ceilings and maintenance window | Deployment planning | Measure available headroom; protect the existing website |
 
 No project, key, card, provider service, Discord setting or deployment resource
-has been created or configured during Phase 0 or Milestone 1.
+has been created or configured by the agent during Phase 0 or Milestones 1–2.

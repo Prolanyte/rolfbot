@@ -3,6 +3,7 @@
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
@@ -17,8 +18,27 @@ class ConfigurationError(ValueError):
 class Settings:
     log_level: str
     timezone: ZoneInfo
+    database_path: Path | None = field(default=None, repr=False)
     openai_api_key: str | None = field(default=None, repr=False)
     discord_bot_token: str | None = field(default=None, repr=False)
+
+
+def database_path(value: str) -> Path:
+    """Validate syntax only; never open, create or probe the configured file."""
+    if (
+        not isinstance(value, str)
+        or not value
+        or any(ord(character) < 32 for character in value)
+        or value != value.strip()
+        or value.endswith("/")
+        or not Path(value).is_absolute()
+        or ".." in Path(value).parts
+    ):
+        raise ConfigurationError(
+            "ROLFBOT_DATABASE_PATH must be an explicit absolute file path "
+            "without control characters or parent traversal."
+        )
+    return Path(value)
 
 
 def _credential(
@@ -78,6 +98,10 @@ def load_settings(
     return Settings(
         log_level=level,
         timezone=timezone,
+        database_path=(
+            database_path(source["ROLFBOT_DATABASE_PATH"])
+            if "ROLFBOT_DATABASE_PATH" in source else None
+        ),
         openai_api_key=_credential(source, "OPENAI_API_KEY", required=require_openai),
         discord_bot_token=_credential(
             source, "DISCORD_BOT_TOKEN", required=require_discord

@@ -62,7 +62,7 @@ def test_run_always_refuses_even_with_credentials_and_future_settings(cli_proces
     })
     assert result.returncode == 3
     assert "startup_refused" in result.stderr
-    assert "Milestones 2–4" in result.stderr
+    assert "Milestones 3–4" in result.stderr
     assert "event=shutdown" in result.stderr
     assert "synthetic-" not in result.stdout + result.stderr
 
@@ -85,6 +85,10 @@ import importlib
 import logging
 import pkgutil
 import sys
+def forbid_database(event, args):
+    if event == 'sqlite3.connect':
+        raise AssertionError('Database opened during import')
+sys.addaudithook(forbid_database)
 import rolfbot
 root_handlers = list(logging.getLogger().handlers)
 for module in pkgutil.walk_packages(rolfbot.__path__, 'rolfbot.'):
@@ -99,6 +103,22 @@ assert not {'discord', 'openai', 'youtube_dl', 'yt_dlp'} & sys.modules.keys()
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout == result.stderr == ""
+
+
+def test_check_config_and_run_never_create_database(cli_process, tmp_path):
+    path = tmp_path / "unused.sqlite3"
+    for command, code in (("check-config", 0), ("run", 3)):
+        result = cli_process(command, extra_env={"ROLFBOT_DATABASE_PATH": str(path)})
+        assert result.returncode == code
+        assert str(path) not in result.stdout + result.stderr
+        assert not path.exists()
+
+
+def test_invalid_database_path_diagnostic_is_safe(cli_process):
+    result = cli_process("check-config", extra_env={"ROLFBOT_DATABASE_PATH": "private-relative-path"})
+    assert result.returncode == 2
+    assert "ROLFBOT_DATABASE_PATH" in result.stderr
+    assert "private-relative-path" not in result.stdout + result.stderr
 
 
 def test_installed_package_has_no_runtime_dependencies():

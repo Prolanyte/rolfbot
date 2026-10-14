@@ -11,6 +11,7 @@ def test_defaults_and_immutable_settings():
     assert settings.timezone.key == "Europe/Oslo"
     assert settings.openai_api_key is None
     assert settings.discord_bot_token is None
+    assert settings.database_path is None
     with pytest.raises(FrozenInstanceError):
         settings.log_level = "DEBUG"
 
@@ -103,6 +104,20 @@ def test_future_settings_do_not_enable_or_configure_integrations():
         "OPENAI_MODEL": "unapproved-expensive-model",
         "OPENAI_REASONING_EFFORT": "max",
         "ROLFBOT_GUILD_CHANNELS": "not a mapping",
-        "ROLFBOT_DATABASE_PATH": "/must/not/be/created.sqlite3",
     })
     assert settings == load_settings({})
+
+
+def test_database_path_is_validated_without_file_access(tmp_path):
+    path = tmp_path / "missing-parent" / "usage.sqlite3"
+    settings = load_settings({"ROLFBOT_DATABASE_PATH": str(path)})
+    assert settings.database_path == path
+    assert str(path) not in repr(settings)
+    assert not path.parent.exists()
+
+
+@pytest.mark.parametrize("value", ["", "relative.sqlite3", ":memory:", "file:/tmp/private", "/", "/tmp/", "/tmp/../private", "/tmp/private\x00", "/tmp/private\n", " /tmp/private"])
+def test_invalid_database_paths_have_safe_errors(value):
+    with pytest.raises(ConfigurationError, match="ROLFBOT_DATABASE_PATH") as caught:
+        load_settings({"ROLFBOT_DATABASE_PATH": value})
+    assert "private" not in str(caught.value)
