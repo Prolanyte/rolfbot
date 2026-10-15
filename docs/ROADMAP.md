@@ -2,11 +2,12 @@
 
 Planning baseline/Milestones 1–2: **14 October 2026**. Milestone 3 offline
 validation: **15 October 2026**. Phase 0 and Milestones 1–2 are complete.
-**Milestone 3 is implementation complete, pending authorized live smoke testing.**
-The package includes a bounded OpenAI service protected by SQLite accounting.
-The **minimal Discord MVP (4a) is implemented offline**, with an explicitly opt-in
-smoke test and `/rolfbot` command. Live validation remains pending. No real API
-call, Discord connection or deployment was performed during implementation.
+**The owner reports a successful live OpenAI smoke test and private-guild
+`/rolfbot` test.** Milestone 3 and the minimal Discord MVP (4a) provide the working
+baseline. Natural mentions, reply continuation and bounded ephemeral memory are
+now implemented and tested offline; their local live check precedes deployment.
+The agent has not independently verified live results or project attribution,
+used real credentials, connected to Discord, or performed deployment.
 See the [README](../README.md) for tested setup and commands, and
 [YouTube research](YOUTUBE_RESEARCH.md) for the conditional music decision.
 
@@ -21,17 +22,18 @@ friend-group personality without adding unnecessary infrastructure or tools.
 | 0. Documentation — complete | Establish an accurate baseline | Source inspection and current research | Links, ignore rules and scope verified; legacy source unchanged |
 | 1. Runtime foundation — complete | Make future development reproducible and testable | Phase 0 | Validated configuration, parseable modules, offline tests and documented dependencies |
 | 2. Usage protection — complete | Enforce persistent quotas before paid access | Milestone 1 | Atomic reservation, lifecycle, restart, calendar and concurrency tests pass on Python 3.12/3.13 |
-| 3. OpenAI — implementation complete, pending authorized live smoke testing | Deliver bounded asynchronous AI requests | Milestones 1–2; owner-managed billing configured | 258 offline tests pass on Python 3.12/3.13; live provider access/attribution remains unverified |
-| 4a. Minimal Discord MVP — implemented offline | One explicit /rolfbot command, opt-in smoke test and safe startup | Milestones 1–3 | Offline suite passes; owner verifies live OpenAI attribution and one-guild Discord delivery |
-| 6. Minimal release readiness — next after local validation | Record the exact reviewed release SHA and local evidence | Milestone 4a; owner authorization to commit | Tests, configuration and operations review complete for the minimal feature set |
+| 3. OpenAI — owner reports smoke-test success | Deliver bounded asynchronous AI requests | Milestones 1–2; owner-managed billing configured | Original 258-test offline suite retained; project attribution not independently verified |
+| 4a. Minimal Discord MVP — owner reports private-guild success | One explicit /rolfbot command, opt-in smoke test and safe startup | Milestones 1–3 | Original 352-test MVP baseline retained |
+| 4a enhancement — implemented offline | Natural mentions, reply chains and bounded ephemeral context | Working minimal MVP | 432 tests on Python 3.12/3.13; owner checks new conversation behavior locally |
+| 6. Release readiness — next after conversation validation | Record the exact reviewed release SHA and local evidence | Milestone 4a enhancement; owner authorization to commit | Tests, configuration and operations review complete for the enabled feature set |
 | 7. Production deployment — separately authorized | Deploy the minimal MVP independently of the website | Local live acceptance and minimal release readiness | Service, restart, resource limits and rollback verified; website unaffected |
 | 4b. Personality and scheduling — after deployment | Friend-group refinement and varied spontaneous messages | Stable deployed MVP | Quiet hours, cadence, novelty, restart and quota tests pass |
 | 5. Optional music — later | Decide feasibility, then implement if approved | Stable MVP; research and playback gates | Local and Vultr evidence plus acceptable terms/maintenance decision, or music disabled |
 
-**Delivery order changed by the owner on 15 October 2026:** first validate the
-smallest working OpenAI/Discord bot locally, then deploy it to the existing Vultr
-website VM with separate authorization, then add features. Scheduling, personalized
-inside jokes and music are not prerequisites for the initial deployment. This task
+**Current delivery order:** the owner has validated the small working bot and
+requested natural conversations before production. Validate that enhancement
+locally, then deploy to the existing Vultr website VM with separate authorization.
+Scheduling, personalized inside jokes and music follow deployment. This task
 does not deploy. The [local runbook](LOCAL_TEST.md) records tested versions, the
 base commit and the pending intended-deployment SHA; no commit/push was authorized.
 
@@ -188,7 +190,7 @@ scheduler, music functionality, VM access or billing verification/change was add
 Production storage durability,
 backup restoration and release migration still require operational validation.
 
-## 3. OpenAI — implementation complete, pending authorized live smoke testing
+## 3. OpenAI — implemented; owner reports smoke-test success
 
 ### Asynchronous AI requests
 
@@ -206,8 +208,9 @@ Implemented components:
   [SDK reference](https://developers.openai.com/api/reference/python).
 - Model and effort settings are validated allowlists: **gpt-6-luna** and **none**
   only. Every Responses request sets **512 output tokens**, `store=False`, no
-  streaming/background work, no tools and no continuation/history. User input is
-  one validated message; scheduled input and the friendly, playful persona are
+  streaming/background work, no tools and no provider-side continuation. The
+  original one-message contract now accepts optional bounded context through
+  the conversation enhancement. Scheduled input and the friendly, playful persona are
   centralized bounded constants. No live-weather or tool capability is claimed.
   [Model](https://developers.openai.com/api/docs/models/gpt-6-luna),
   [Responses API](https://developers.openai.com/api/reference/python/resources/responses/methods/create).
@@ -266,11 +269,11 @@ repeat migration. Imports remain database/network/client-free, `check-config`
 works without credentials, and `run` refused startup at this milestone. Both compilations, locked
 dependency installations, `pip check` and `git diff --check` pass.
 
-**Offline Milestone 3 acceptance is satisfied.** Live API/project attribution,
-model availability and response quality are unverified. No real credentials,
-provider call, Discord connection, scheduler, music, VM access or billing change
-was used. Milestone 4a now supplies the integration and smoke-test command; the
-owner must perform the opt-in live checks before end-to-end acceptance.
+**Offline Milestone 3 acceptance is satisfied.** The owner subsequently reported
+a successful live smoke test and `/rolfbot` test. Project attribution and detailed
+live evidence have not been independently verified. The agent used no real
+credentials, provider call, Discord connection, scheduler, music, VM access or
+billing change. Milestone 4a supplies the integration and opt-in smoke-test command.
 
 ### Owner-managed billing prerequisite
 
@@ -299,11 +302,12 @@ charges where applicable, other pricing tiers and future price changes must also
 be budgeted. Characters are not tokens. Record actual usage without storing
 message content, and review spending at the $1 warning.
 
-**Remaining live acceptance:** after separate authorization, a small smoke test verifies
-project attribution, model access, useful replies and usage reporting. Do not
-spend through the cap to test enforcement; simulate those errors locally.
+**Remaining live evidence:** the owner reports smoke-test success; record project
+attribution and usage reporting privately if not already checked. No repeat paid
+smoke test is needed solely for the conversation enhancement. Do not spend through
+the cap to test enforcement; simulate those errors locally.
 
-## 4a. Minimal Discord MVP — implemented, pending local live validation
+## 4a. Minimal Discord MVP — implemented; owner reports private-guild success
 
 - Pinned **discord.py 2.7.1**, with aiohttp **3.14.5**, on Python 3.12/3.13.
 - One guild-scoped `/rolfbot message:<text>` command. A private
@@ -312,8 +316,9 @@ spend through the cap to test enforcement; simulate those errors locally.
   non-text channels are denied before admission.
 - Authenticated interaction user/guild IDs and interaction ID feed the unchanged
   `AIService`/SQLite barrier. No alternate transport or quota implementation.
-- Only the guilds intent; no ordinary-message subscriptions, message cache,
-  member/presence/content intents or Administrator requirement.
+- Original MVP used only the guilds intent. The conversation enhancement adds
+  nonprivileged guild messages; message cache, member/presence/content intents
+  and Administrator remain unnecessary/disabled.
 - Defer before storage/API work, with a 2-second deadline. Failed/ambiguous defer
   cannot generate. Edit the deferred response once within 10 seconds, suppressing
   all mentions. AI output remains bounded to 1,800 UTF-16 units. Failed delivery
@@ -328,7 +333,7 @@ spend through the cap to test enforcement; simulate those errors locally.
   unique attempt ID and normal quotas. It prints safe outcome/text/token counts
   and closes the client. The agent must not run it live; the owner opts in.
 
-**Offline acceptance: 352 tests pass on each of Python 3.12.15 and 3.13.16.**
+**Original offline acceptance: 352 tests passed on each of Python 3.12.15 and 3.13.16.**
 Real command registration/dispatch runs over mocked Discord
 interactions and OpenAI HTTP, with committed SQLite authorization for every
 simulated API send. Tests cover both guilds, duplicates, quotas, storage and
@@ -336,10 +341,51 @@ ambiguous dispatch, defer/delivery errors, Unicode/mentions, reconnection,
 shutdown/cancellation and credential-free imports. Full results and the pending
 release SHA are recorded in [LOCAL_TEST.md](LOCAL_TEST.md).
 
-**Live acceptance pending:** owner executes the runbook, verifies OpenAI project
-usage and a few slash commands in one test guild, then validates the second
-guild. No live result or deployment is claimed. No periodic messages, extra
-commands, music, history, tools, dashboard or HTTP server are implemented.
+**Owner-reported live acceptance:** a smoke test and private-guild `/rolfbot`
+succeeded. Second-guild rollout and detailed project attribution were not supplied.
+No agent-run live test or deployment is claimed. Periodic messages, extra commands,
+music, tools, a dashboard and an HTTP server remain unimplemented.
+
+### Natural conversations — implemented offline, before deployment
+
+- `on_message` handles real mentions of the authenticated bot (`<@ID>`/`<@!ID>`)
+  and replies to remembered, successfully delivered bot answers. Other bots,
+  webhooks, DMs, threads and unconfigured guilds/channels are ignored. Nearby
+  messages, attachments, embeds and channel history are never collected/fetched.
+- Enable only ordinary guild-message events alongside guilds; keep Message
+  Content intent off. Replies without a fresh mention require Discord to supply
+  their content. Otherwise the user must explicitly mention Rolfbot. The bot needs
+  Read Message History permission to send linked replies, not to fetch history.
+- Immutable snapshots per confirmed reply isolate guild, channel and branch.
+  Multiple friends share a branch via local participant labels; usernames and
+  raw IDs are not automatically added to model context. An older reply starts
+  from that point, excluding later turns. Standalone mentions start fresh.
+- Central bounds: **4 completed pairs, 6,000 UTF-8 historical bytes, 60 idle
+  minutes, 64 reply records process-wide**, and **12,288 bytes of total request
+  text** including persona/current input/labels. Remove oldest whole pairs first;
+  expired/LRU records are evicted. No transcript persistence or reconstruction.
+  Restart/shutdown clears context while SQLite usage survives. An explicit
+  mention after memory loss safely starts fresh; unknown bare replies are ignored.
+- Same `AIService`/SQLite admission, 20 personal and 100 global requests/day,
+  30-second cooldown, 1,000-code-point current input, 512 output tokens and zero
+  OpenAI retries. Stable `message:<ID>` attempts prevent duplicate dispatch across
+  restarts. AI validation independently bounds history and request construction;
+  roles remain user/assistant, `store=False`, no provider conversation or tools.
+- Only successful generation plus confirmed delivery enters history. Per-reply
+  guards prevent overlapping continuations; two unrelated conversations may use
+  shared AI slots. Handler capacity is bounded with no queue. Failed/ambiguous
+  sends never regenerate or refund. Typing tasks are cancelled and joined.
+  Replies preserve the original message and suppress all mentions.
+- **432 offline tests pass on Python 3.12.15 and 3.13.16**, including all previous
+  tests, memory/Unicode/expiry/LRU limits, branches/isolation, shared accounting,
+  controlled concurrency, provider/delivery failures and cancellation cleanup.
+  Offline installs, compilation and dependency checks pass. No new dependencies,
+  environment settings, SQLite schema change, paid request or external test call.
+
+**Next:** owner performs the few local conversation checks in
+[LOCAL_TEST.md](LOCAL_TEST.md#8a-exercise-natural-conversations), then a separately
+authorized production deployment. History increases input-token costs; retain
+the owner-managed $2 monthly spending controls. No commit or push was authorized.
 
 ## 4b. Personalized personality and varied spontaneous messages — deferred
 
@@ -347,7 +393,7 @@ Develop this only after the minimal MVP is locally validated and deployed.
 
 - Refine the friendly Rolfbot persona with owner-provided friend-group details,
   humor and inside jokes. Keep private details out of public examples; no
-  accumulated conversation history or automatic channel ingestion is implied.
+  persistent transcript or automatic channel ingestion is implied.
 - Vary spontaneous content among **Million Dollars, But...**, **Would You
   Rather...**, strange/interesting facts, food-related remarks, jokes, absurd
   observations, conversation starters and occasional other suitable subjects.
@@ -414,6 +460,7 @@ waiting days or hitting real rate limits.
 | Input/output | Empty and 1,000/1,001-character input; Unicode; 512-token request cap; incomplete/empty output; Discord length and mentions |
 | OpenAI failures | Timeout, connection error, 401/403, invalid model, transient 429, spend-limit 429 and 5xx; no hidden retry calls |
 | Commands | Slash registration, permission failures, two guilds, unsupported DM/guild and friendly feedback |
+| Conversations | Authenticated mentions, multi-user reply branches, UTF-8/request limits, idle expiry/LRU, confirmed delivery only, shared quotas and shutdown cleanup |
 | Scheduling | One task after repeated reconnects, deterministic 2–7-day range, restart, missing channel, downtime and quota exhaustion |
 | Voice, if enabled | Queue isolation/limits, disconnects, extraction failure, expired URL, cancellation, worker/process cleanup; mocked network |
 | Security/configuration | Missing/placeholder credentials, malformed mappings, secret redaction, hostile URLs/redirects/DNS and subprocess arguments |
@@ -427,9 +474,10 @@ commit SHA before deployment; never label an uncommitted workspace as a release.
 ## 7. Separate production deployment milestone
 
 **Target:** the existing Ubuntu 24.04 Vultr VM serving `nilsherman.no` through
-nginx as a static site. This follows minimal local OpenAI/Discord acceptance and
-precedes additional feature development. No production access or changes were
-made in Phase 0, Milestones 1–3, or the minimal MVP implementation.
+nginx as a static site. This follows local acceptance of the working MVP and
+conversation enhancement, and precedes scheduling/personality/music work. No
+production access or changes were made in Phase 0, Milestones 1–3, the minimal
+MVP implementation or the conversation enhancement.
 
 - Run as a dedicated, unprivileged Linux service user with an isolated virtual
   environment and versioned release directories. Keep persistent SQLite state

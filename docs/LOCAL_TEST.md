@@ -1,9 +1,16 @@
 # Local OpenAI and Discord validation
 
-The minimal MVP is implemented and tested offline. **Live OpenAI access, project
-attribution and Discord delivery are not yet verified.** These steps are for the
-owner after reviewing the code. The agent has not executed live commands, read
-real credentials, changed Discord settings, or accessed Vultr. Do not deploy yet.
+The owner reports a **successful live OpenAI smoke test and `/rolfbot` in a private
+Discord server**. Natural mentions/replies and bounded memory are implemented
+and tested offline; their local live acceptance is next. Project attribution,
+second-guild rollout and production readiness have not been independently verified.
+The agent has not executed live commands, read real credentials, changed Discord
+settings, or accessed Vultr. Deployment remains a separate task.
+
+For the existing working installation, keep its credentials and usage database;
+do not repeat provisioning or the paid smoke test just for this enhancement.
+Review the updated permissions in step 6 and conversation checks in step 8a.
+Steps 2–5 remain a reference for a new installation or deliberate owner diagnosis.
 
 ## 1. Install and verify locally
 
@@ -102,8 +109,8 @@ Do not repeatedly rerun on errors. Authentication/model-access/billing failures
 persistently block the service; fix the underlying cause and use the deliberate
 operator recovery described in the README. No command clears that block.
 Timeouts or failed completion writes remain potentially billable and counted.
-Do not delete the database to retry. No compatibility claim depends on a live
-result yet; report safe outcome/counts if a provider mismatch needs investigation.
+Do not delete the database to retry. The baseline smoke test has already succeeded
+according to the owner; report safe outcome/counts if a later mismatch needs investigation.
 
 ## 5. Verify the OpenAI project
 
@@ -131,10 +138,15 @@ ROLFBOT_GUILD_CHANNELS='{"111111111111111111":["222222222222222222"]}'
 
 Use an ordinary guild text channel. Threads, DMs and unlisted channels are
 rejected. Confirm the bot is installed in that guild with `bot` and
-`applications.commands` scopes. Allow View Channel and Send Messages for the bot,
-and Use Application Commands for the intended members. Do not grant
-Administrator or enable privileged gateway intents; only the nonprivileged
-guilds intent is requested. No Developer Portal changes were made by this task.
+`applications.commands` scopes. Allow **View Channel, Send Messages and Read
+Message History** for the bot, and Use Application Commands for the intended
+members. Read Message History is required by Discord to send linked replies;
+Rolfbot does not fetch history. Keep Message Content, Server Members and Presence
+intents disabled; the code requests only nonprivileged `guilds` and `guild_messages`.
+There is no new environment variable or privileged-intent toggle to enable.
+Do not grant Administrator. No Developer Portal changes were made by this task.
+[Discord reply permission](https://docs.discord.com/developers/resources/message#create-message),
+[content exception for mentions](https://docs.discord.com/developers/events/gateway#message-content-intent).
 
 Review the application's existing guild commands: startup synchronization will
 replace its configured guild command set with `/rolfbot`. Other applications'
@@ -178,12 +190,65 @@ The same user's quota/cooldown spans both guilds. A removed guild may retain a
 stale command in its UI, but the runtime denies it; any remote cleanup is an owner
 action. No scheduler or music is active in either guild.
 
+## 8a. Exercise natural conversations
+
+Use a few deliberate messages in the private test channel, budgeting for history's
+additional input tokens. Every accepted turn shares the same 20/user/day,
+100 total/day, 30-second cooldown and 512-output-token cap with `/rolfbot`.
+Do not exhaust limits or manufacture API failures live; offline tests cover them.
+
+1. Send `@Rolfbot would you rather fly or be invisible?` using Discord's real bot
+   mention. Expect typing and a linked reply, with your original message still
+   visible and no reply-author ping. Check that ordinary nearby messages receive
+   no answer. The bot rejects empty text after mention removal and more than
+   1,000 submitted code points before quota use.
+2. Have another friend **reply to that Rolfbot answer** with a short follow-up.
+   When Discord supplies its content, the answer should use the earlier exchange
+   and distinguish the participants. If there is no response, add an explicit
+   `@Rolfbot` mention in the reply: content availability without a fresh mention
+   is not guaranteed. Do not enable Message Content intent to compensate.
+3. After the cooldown, reply to the earlier answer again. This branches from that
+   answer; it should not include later sibling turns. A standalone mention, or
+   a mention replying to an unrelated message, begins with no history. Another
+   allowed channel/guild must not inherit the original context.
+4. Keep any generated `@everyone`, user or role mention inert: all replies use
+   `AllowedMentions.none()` and `mention_author=False`. The bot never edits/deletes
+   the triggering user's message. Bots/webhooks, DMs and threads are ignored.
+5. Stop and restart once using the same SQLite file. An explicit mention while
+   replying to an old answer should start fresh. A bare reply to a forgotten
+   answer is ignored because the bot cannot identify it without fetching history.
+   Usage and cooldowns must survive. Expiry after 60 idle minutes and eviction
+   from the 64-record cache have the same context behavior; no need to spend
+   live calls filling the cache or wait an hour, as fake-clock tests cover both.
+
+Each confirmed bot answer holds an immutable snapshot of up to four completed
+user/assistant pairs, capped at 6,000 UTF-8 bytes including participant labels.
+Full request text, including personality and current input, is at most 12,288
+bytes. Oldest complete pairs are removed first. A pair too large for historical
+storage is omitted as a whole; the current prompt is still sent intact. Replying
+to an older point cannot import its later branches. At most two message handlers
+run at once, with no waiting queue; excess messages may be ignored. A referenced
+reply already being processed gets brief busy feedback when capacity allows.
+
+Only successful, confirmed deliveries enter memory. Ambiguous delivery does not
+trigger another generation or refund. The SDK's bounded Discord HTTP retries can
+still cause an ambiguous visible post; retrying generation is never the recovery.
+No transcript is written to disk/logs/SQLite. Explicit text and bounded context
+are sent to OpenAI, with session-local participant numbers instead of automatically
+added Discord IDs/usernames. Discord retains visible messages independently.
+`/rolfbot` remains context-free. No attachments, embeds or channel history are read.
+
+Record safe observations and project usage privately, including whether a reply
+without an extra mention worked in this guild. Do not paste private conversation
+text, credentials or raw exceptions into the repository. This task ran no live checks.
+
 ## 9. Stop cleanly
 
 Press Ctrl-C, or send SIGTERM to the bot process. Expect shutdown logging and
 closed Discord/OpenAI connections. SIGINT exits 130; SIGTERM exits 143. An
 in-flight or ambiguous API request remains counted even if its answer was not
-delivered. Restart using `run`, **not** `init-db`; quotas and blocks persist.
+delivered. Typing tasks are joined and conversation snapshots/expiry timers are
+cleared. Restart using `run`, **not** `init-db`; quotas and blocks persist.
 
 ## Verification and release record
 
@@ -193,17 +258,20 @@ delivered. Restart using `run`, **not** `init-db`; quotas and blocks persist.
 - Discord HTTP dependency: **aiohttp 3.14.5**; Python 3.13-only **audioop-lts 0.2.2**.
 - Test/build tools: **pytest 9.1.1**, **setuptools 84.0.0**. Full closure is in
   [requirements-dev.lock](../requirements-dev.lock).
-- Offline verification: **352 tests passed on each Python version**; source/test
+- Offline verification: **432 tests passed on each Python version**; source/test
   compilation, dependency installation and `pip check` passed on both. Python
   3.13 used an editable install and Python 3.12 a regular wheel. Import/CLI network
   tripwires, mocked real-SDK requests, SQLite admission checks and
   `git diff --check` passed. No real credentials or live services were used.
-- Base commit: `d06fde8be6304bd97393dc5a226d028e9e540f01` (Milestone 3).
+- Base commit: `6a4a1979a8ce1a480ce979f3d2881c48aff4a4d5` (working minimal MVP).
 - **Intended deployment commit SHA: pending an owner-authorized commit of this
-  MVP.** The base SHA does not contain these uncommitted changes and must not be
-  presented as the MVP release. No commit or push was authorized in this task.
-- Live smoke test, project attribution, Discord delivery and shutdown: **pending
-  owner verification**. Record date, safe outcome/counts and guild rollout status.
+  conversation enhancement.** The base SHA does not contain these uncommitted
+  changes. No commit or push was authorized in this task.
+- Baseline live smoke test and private-guild `/rolfbot`: **owner-reported success**.
+  The agent has not independently verified those results. Exact test timestamps,
+  project attribution, second-guild rollout and live shutdown evidence were not supplied.
+- Mention/reply enhancement: **offline verified; local live checks pending**.
+  Record their date and safe observations before deployment.
 
 Before later deployment, commit the reviewed implementation with separate
 authorization, record the resulting `git rev-parse HEAD` as the intended release

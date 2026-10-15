@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 
 from rolfbot import openai_client
 from rolfbot.config import APPROVED_MODEL, Settings
+from rolfbot.conversation import Context, validate_context
 from rolfbot.openai_client import GenerationResult, Outcome, SCHEDULED_PROMPT
 from rolfbot.usage import BlockReason, Code, valid_attempt_id, validate_input
 from rolfbot.usage_store import UsageStore
@@ -88,8 +89,9 @@ class AIService:
     async def generate_user(
         self, user_id: str, attempt_id: str, text: str, *,
         now: datetime | None = None, guild_id: str | None = None,
+        context: Context | None = None,
     ) -> GenerationResult:
-        return await self._generate(attempt_id, text, user_id, guild_id, now, scheduled=False)
+        return await self._generate(attempt_id, text, user_id, guild_id, now, scheduled=False, context=context)
 
     async def generate_scheduled(
         self, attempt_id: str, *, now: datetime | None = None,
@@ -122,10 +124,14 @@ class AIService:
         except Exception:
             return Code.STORAGE_UNAVAILABLE
 
-    async def _generate(self, attempt_id, text, user_id, guild_id, now, *, scheduled) -> GenerationResult:
+    async def _generate(self, attempt_id, text, user_id, guild_id, now, *, scheduled, context=None) -> GenerationResult:
         validation = validate_input(text)
         if validation.code != Code.OK:
             return GenerationResult(Outcome.DENIED, denial=validation)
+        try:
+            validate_context(context)
+        except ValueError:
+            return GenerationResult(Outcome.INVALID_CONTEXT)
         unavailable = self._unavailable()
         if unavailable is not None:
             return unavailable
@@ -158,7 +164,7 @@ class AIService:
                 return result
             reserved = True
             try:
-                payload = openai_client._prepare(text)
+                payload = openai_client._prepare(text) if context is None else openai_client._prepare(text, context=context)
             except Exception:
                 accounting = await self._refund(attempt_id, timestamp)
                 result = GenerationResult(Outcome.PREPARATION_FAILED, accounting=accounting)

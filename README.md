@@ -4,13 +4,14 @@ Rolfbot is a small Python Discord bot project for a friend group across two
 servers, with roughly 10–12 people in the larger server. Its intended personality
 is friendly, playful and useful.
 
-**The minimal Discord MVP and opt-in OpenAI smoke-test command are implemented;
-live validation is pending.** `/rolfbot message:<text>` uses the existing OpenAI
-service and persistent SQLite admission. `run` now starts Discord when explicitly
-invoked with valid credentials, guild/channel configuration and existing storage.
-No live API/Discord test or deployment was performed during implementation.
-Scheduling and music remain inactive. Follow the [local test runbook](docs/LOCAL_TEST.md)
-to review and perform the owner-controlled live checks.
+**The owner reports a successful live OpenAI smoke test and `/rolfbot` test in a
+private Discord server.** Natural mentions and replies with bounded conversation
+memory are now implemented and tested offline, ready for local live testing.
+Both interaction paths use the same OpenAI service and persistent SQLite admission.
+The agent has not independently verified the live results or project attribution,
+used real credentials, or deployed anything. Scheduling and music remain inactive.
+Follow the [local test runbook](docs/LOCAL_TEST.md) for the new conversation checks;
+production deployment is the next separate milestone after local acceptance.
 
 ## Architecture
 
@@ -25,6 +26,8 @@ to review and perform the owner-controlled live checks.
 │   ├── cli.py              # Explicit commands, exit codes and asyncio lifecycle
 │   ├── runtime.py          # Storage checks, opt-in smoke test and client ownership
 │   ├── discord_bot.py      # Allowlisted /rolfbot command and Discord lifecycle
+│   ├── discord_messages.py # Explicit mentions/replies through the shared AI service
+│   ├── conversation.py     # Bounded ephemeral reply snapshots and context validation
 │   ├── config.py           # Typed settings and conditional credential validation
 │   ├── logging_setup.py    # Consistent, redacted stderr logging
 │   ├── usage.py            # Limits, input validation and structured results
@@ -139,7 +142,8 @@ The CLI owns an asyncio loop, handles SIGTERM cancellation, allows SIGINT to
 cancel work, restores signal handlers and logs shutdown in a `finally` block.
 It is a main-thread Linux entry point and does not rely on terminal interaction.
 The Discord lifecycle owns one AI service. Shutdown stops admission, cancels
-interaction work, and closes OpenAI and Discord resources.
+interaction/message work, joins typing tasks, clears conversation memory, and
+closes OpenAI and Discord resources.
 
 The offline suite covers configuration, credential/log redaction, imports, CLI
 behavior, invalid-startup refusal and SIGINT/SIGTERM cleanup, plus real file-backed
@@ -155,10 +159,14 @@ dependency/configuration contract. Milestone 3 adds real-SDK mocked-HTTP tests,
 usage migration, provider errors, backoff, cancellation and output/privacy checks.
 All simulated sends assert a fresh committed SQLite dispatch, and test network
 tripwires remain active. No SDK test has a separate unaccounted generation path.
-**352 tests pass on each of Python 3.12.15 and 3.13.16.** The MVP adds real
+**432 tests pass on each of Python 3.12.15 and 3.13.16**, retaining the original
+352-test MVP baseline. The MVP adds real
 Discord command-tree invocation with mocked interactions,
 opt-in smoke tests through mocked HTTP, startup/storage failure tests, mention
-suppression, defer/delivery deadlines and owned shutdown. See the
+suppression, defer/delivery deadlines and owned shutdown. The conversation tests
+add authenticated mentions, multi-user reply branches, scope isolation, expiry,
+LRU eviction, UTF-8 budgets, shared quotas, duplicate events, typing cleanup and
+unconfirmed delivery. See the
 [verification record](docs/LOCAL_TEST.md#verification-and-release-record) for
 the final test counts, dependency versions and release SHA status. Offline
 evidence does not establish provider access, billing attribution or Discord delivery.
@@ -312,12 +320,14 @@ supports ordinary guild text channels; threads and other channel types are
 rejected. It uses the authenticated interaction user/guild IDs and the interaction
 ID as the unique usage attempt ID. User allowances are shared across guilds.
 
-The bot requests only the nonprivileged `guilds` intent. It does not subscribe to
-message, member, presence or voice-state events, and has no ordinary-message
-handler or message cache. Use the existing bot account with `bot` and
-`applications.commands` scopes, View Channel and Send Messages in AI channels,
-and permission for users to invoke application commands. Administrator and
-privileged gateway intents are unnecessary.
+The bot requests the nonprivileged `guilds` and `guild_messages` intents.
+Message Content, members, presences, DM messages and voice-state intents remain
+disabled, as does the SDK message cache. Use the existing bot account with `bot`
+and `applications.commands` scopes, View Channel, Send Messages and **Read Message
+History** in AI channels, and permission for users to invoke application commands.
+Discord requires Read Message History to **send a reply**; Rolfbot never fetches
+history. Administrator and privileged intents are unnecessary.
+[Discord reply permissions](https://docs.discord.com/developers/resources/message#create-message).
 
 Allowed interactions are deferred immediately with a two-second local timeout,
 before database or OpenAI work. Failed, timed-out, already-answered or expired
@@ -348,6 +358,77 @@ reconnect and shutdown generate no AI messages. Third-party Discord/aiohttp
 payload logs are suppressed, including at DEBUG; application errors use fixed
 safe categories. No scheduler, music or extra slash commands run.
 
+## Natural conversations and memory
+
+Mention the actual bot in a configured text channel: `@Rolfbot what's the most
+useless superpower?` The mention starts a fresh conversation unless it is also a
+reply to a remembered Rolfbot answer. Both `<@ID>` and `<@!ID>` are recognized
+against the logged-in bot's ID and Discord mention metadata. Its mention syntax
+is removed before the existing 1,000-code-point validator runs. Empty/oversized
+prompts are rejected before quota admission.
+
+Use Discord's **Reply** action on a recent Rolfbot answer to continue. Other
+friends can join that same chain by replying. A snapshot is tied to each confirmed
+bot answer and scoped to its guild and channel: replying to an older answer
+branches from that point without importing later turns. Nearby messages, replies
+to unrelated users/bots, and separate mentions do not join the conversation.
+`/rolfbot` remains a standalone, context-free alternative.
+
+Discord exposes messages mentioning the application without Message Content
+intent. Replies without a fresh textual mention work only when Discord supplies
+their text and the referenced bot answer is still remembered. If nothing happens,
+**include `@Rolfbot` in your reply**. After expiry, eviction or restart, an explicit
+mention safely starts fresh; an unrecognized reply without a mention is ignored.
+The bot never fetches missing content or reconstructs old context.
+[Discord content exceptions](https://docs.discord.com/developers/events/gateway#message-content-intent),
+[discord.py intents](https://discordpy.readthedocs.io/en/stable/intents.html).
+
+| Bound | Policy |
+| --- | --- |
+| History per reply snapshot | At most 4 completed user/assistant pairs and 6,000 UTF-8 text bytes, including participant prefixes |
+| Full OpenAI request text | At most 12 KiB (12,288 bytes), including personality, history, prefixes and current input |
+| Idle lifetime | 60 minutes since creation or a valid addressed use of that reply accepted for handling; an event-loop timer removes idle records even without traffic |
+| Process capacity | 64 reply snapshots; expired records removed first, then least recently used |
+| Trimming | Oldest complete pairs first; never split Unicode, retain orphan answers, or discard current input to fit history |
+
+These constants live in `conversation.py`; no new environment settings are needed.
+A single completed pair larger than 6,000 bytes is omitted from future history;
+its reply ID remains recognized with empty context. Each snapshot counts toward
+the 64-record cap, including older branching points. Participant mappings are
+also bounded by retained exchanges. Labels such as `Participant 1` distinguish
+contributors without automatically sending usernames or raw Discord IDs to OpenAI.
+An author whose older turns have been trimmed may receive a new label.
+
+Only a successful AI answer **and confirmed Discord delivery** create a completed
+history pair. Denials, failures, partial output, cancellation and ambiguous sends
+never do. A reply already being processed gets brief busy feedback when capacity
+permits. At most two message handlers run through generation/delivery; excess
+events and active duplicates are ignored without a queue or quota use. Unrelated
+conversations can use both shared AI slots. Typing indicators are owned, bounded
+and cancelled/joined after completion or shutdown. Replies use `mention_author=False`,
+`AllowedMentions.none()` and suppressed embeds, leaving the user's original message
+visible. Delivery has a ten-second deadline; there is no application retry. Discord's
+SDK may retry its HTTP send within that deadline, so ambiguous delivery cannot
+guarantee exactly one visible post; it never causes a second model generation.
+
+Both paths retain 20/user/day, 100 total/day, the 30-second shared user cooldown,
+512 output tokens and zero OpenAI retries. Message attempts use `message:<message-ID>`;
+slash interactions retain their existing numeric attempt IDs. SQLite's single-use
+dispatch prevents regeneration after redelivery, memory eviction or process restart.
+Changing channel or starting another conversation never resets quota.
+
+Explicit user text and this bounded history are sent to OpenAI with `store=False`.
+Previous contributions have only user/assistant roles; none become privileged
+instructions. The AI layer independently validates context before reservation and
+enforces the full text budget during request construction. History increases input
+token costs despite unchanged request quotas; monitor the owner-managed $2/month
+limit and $1 alert. Character/byte bounds are not a dollar guarantee.
+
+Rolfbot writes no conversation transcript to SQLite, logs or files. Memory is
+cleared at expiry and graceful shutdown and is absent after restart. Usage and
+cooldowns persist independently. Discord retains the visible messages according
+to its own policies; `store=False` is not a promise about all provider retention.
+
 ## OpenAI service contract
 
 Create **one `AIService(settings, store)` per process/event loop**, shared by all
@@ -360,7 +441,7 @@ for owned cleanup. The Discord lifecycle owns this service.
 
 The only public generation methods are:
 
-- `await service.generate_user(user_id, attempt_id, text, guild_id=..., now=...)`
+- `await service.generate_user(user_id, attempt_id, text, guild_id=..., now=..., context=None)`
 - `await service.generate_scheduled(attempt_id, now=...)`
 
 Omit `now` to use the injected/default UTC clock, or supply trusted server time.
@@ -380,8 +461,10 @@ never refunds. A lost reservation result is also retained conservatively.
 Each request uses `gpt-6-luna`, `reasoning={"effort": "none"}`, a fixed 512-output-
 token cap, `store=False`, `stream=False`, `background=False`, an empty tool list,
 `tool_choice="none"`, plain-text format and disabled input truncation. It carries
-one validated user message plus a concise centralized personality instruction.
-There are no history, conversation IDs, tools, searches or continuation calls.
+one validated current user message plus a concise centralized personality instruction,
+optionally preceded by validated bounded user/assistant history. Slash commands
+and smoke tests omit context. There are no provider-side persistent conversation
+IDs, tools, searches or continuation calls.
 The persona is friendly and playful, keeps answers short and admits its lack of
 live information. See the [model documentation](https://developers.openai.com/api/docs/models/gpt-6-luna)
 and [Responses reference](https://developers.openai.com/api/reference/python/resources/responses/methods/create).
@@ -500,9 +583,9 @@ and recovery with the actual storage before enabling live requests.
 
 The [roadmap](docs/ROADMAP.md) preserves the intended features:
 
-- An explicitly authorized live smoke test of model access, project attribution
-  and response quality; offline validation cannot establish those facts.
-- Validate one guild locally, then enable the second through configuration.
+- Locally validate the new mention/reply behavior on top of the owner-reported
+  successful smoke/slash tests; verify project attribution privately if still needed.
+- Validate conversations in one guild, then enable the second through configuration.
 - Separately authorize deployment to the existing website VM after local
   acceptance, before developing additional features.
 - Later refine the friend-group personality and add varied spontaneous messages
@@ -511,11 +594,10 @@ The [roadmap](docs/ROADMAP.md) preserves the intended features:
   and future host-specific tests.
 - Tested release/deployment and owner-managed billing safeguards before live use.
 
-**Next: the owner's local live smoke/Discord checks, then separately authorized
-deployment of the minimal MVP.**
+**Next: local live conversation checks, then separately authorized deployment.**
 The owner reports that the Rolfbot project, intended GPT-6 Luna model, restricted
 key, $2 enforced monthly limit, $1 alert and $5 prepaid credit with auto-recharge
 disabled are configured. These account settings were not inspected or changed.
-The agent has not executed live tests; the owner explicitly opts in using the
-documented commands. Music, scheduling and deployment remain deferred. Temporary media will belong under `downloads/`;
+The agent has not executed live tests; the owner performs any further live checks
+using the runbook. Music, scheduling and deployment remain deferred. Temporary media will belong under `downloads/`;
 intentional assets and fixtures belong in `assets/` and `tests/fixtures/`.

@@ -1,10 +1,11 @@
-"""Slash-command adapter. Discord imports and clients are explicit and lazy."""
+"""Discord client and slash commands. SDK imports and clients are explicit and lazy."""
 
 import asyncio
 import logging
 
 from rolfbot.ai_service import AIService
 from rolfbot.config import Settings, require_discord_settings
+from rolfbot.discord_messages import MessageHandler
 from rolfbot.openai_client import GenerationResult, Outcome, MAX_OUTPUT_UTF16_UNITS
 from rolfbot.usage import Code, valid_discord_id
 
@@ -36,6 +37,8 @@ def result_message(result: GenerationResult) -> str:
         return _DENIALS.get(result.denial.code, _UNAVAILABLE)
     if result.outcome is Outcome.BUSY:
         return "Rolfbot is answering two requests already. Please try again later."
+    if result.outcome is Outcome.INVALID_CONTEXT:
+        return "Rolfbot couldn't use that conversation. Please start fresh with a mention."
     if result.outcome in (Outcome.BACKOFF, Outcome.RATE_LIMIT):
         return "Rolfbot is taking a short break after a service error. Please try again later."
     if result.outcome in (Outcome.TIMEOUT, Outcome.CONNECTION, Outcome.SERVER_ERROR):
@@ -162,6 +165,7 @@ def create_client(settings: Settings, service: AIService):
 
     _silence_discord_logs()
     handler = CommandHandler(settings, service)
+    message_handler = MessageHandler(settings, service)
 
     class SafeTree(app_commands.CommandTree):
         async def on_error(self, interaction, error):
@@ -172,9 +176,11 @@ def create_client(settings: Settings, service: AIService):
         def __init__(self):
             intents = discord.Intents.none()
             intents.guilds = True
+            intents.guild_messages = True
             super().__init__(intents=intents, allowed_mentions=discord.AllowedMentions.none(), max_messages=None)
             self.tree = SafeTree(self, fallback_to_global=False)
             self.command_handler = handler
+            self.message_handler = message_handler
             self._sync_started = False
             self._owned_close_task = None
 
@@ -199,11 +205,15 @@ def create_client(settings: Settings, service: AIService):
         async def on_ready(self):
             _LOG.info("event=discord_ready")
 
+        async def on_message(self, message):
+            await message_handler.handle(message, self.user)
+
         async def on_error(self, event_method, *args, **kwargs):
             _LOG.error("event=discord_event_error")
 
         async def close(self):
             handler._closing = True  # Stop admission before scheduling cleanup.
+            message_handler._closing = True
             if self._owned_close_task is None:
                 self._owned_close_task = asyncio.create_task(self._close_owned())
             try:
@@ -214,7 +224,10 @@ def create_client(settings: Settings, service: AIService):
 
         async def _close_owned(self):
             try:
-                await handler.aclose()
+                try:
+                    await message_handler.aclose()
+                finally:
+                    await handler.aclose()
             finally:
                 try:
                     await service.aclose()

@@ -79,7 +79,7 @@ def test_registered_command_uses_authenticated_identity_defers_and_accounts(harn
         service = harness.service()
         client = discord_bot.create_client(settings_for(harness), service)
         async with client:
-            assert client.intents.value == discord.Intents(guilds=True).value
+            assert client.intents.value == discord.Intents(guilds=True, guild_messages=True).value
             assert client.tree.get_commands() == []
             assert not client.cached_messages
             for guild in (10, 20):

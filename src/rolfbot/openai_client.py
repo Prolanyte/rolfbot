@@ -11,10 +11,11 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from rolfbot.config import APPROVED_MODEL, ConfigurationError, Settings, require_openai_key
+from rolfbot.conversation import Context, MAX_ASSISTANT_UTF16_UNITS, request_messages
 from rolfbot.usage import BlockReason, Code, Result, TokenUsage, validate_input
 
 MAX_OUTPUT_TOKENS = 512
-MAX_OUTPUT_UTF16_UNITS = 1800
+MAX_OUTPUT_UTF16_UNITS = MAX_ASSISTANT_UTF16_UNITS
 PERSONALITY = (
     "You are Rolfbot, a friendly, playful assistant in a small friend group. "
     "Be conversational and informal; answer normal questions and jokes kindly. "
@@ -47,6 +48,7 @@ class Outcome(StrEnum):
     TIMEOUT = "timeout"
     SERVER_ERROR = "server_error"
     INVALID_RESPONSE = "invalid_response"
+    INVALID_CONTEXT = "invalid_context"
     INCOMPLETE = "incomplete"
     EMPTY_RESPONSE = "empty_response"
     REFUSED = "refused"
@@ -70,7 +72,7 @@ class GenerationResult:
     block_reason: BlockReason | None = None
 
 
-def _prepare(text: str) -> dict:
+def _prepare(text: str, *, context: Context | None = None) -> dict:
     # One policy validator for all input, including the fixed scheduled prompt.
     if validate_input(text).code != Code.OK or len(PERSONALITY) > 1000:
         raise ValueError("Invalid bounded request input.")
@@ -78,7 +80,7 @@ def _prepare(text: str) -> dict:
         "model": APPROVED_MODEL,
         "reasoning": {"effort": "none"},
         "instructions": PERSONALITY,
-        "input": [{"role": "user", "content": text}],
+        "input": request_messages(text, context, PERSONALITY),
         "max_output_tokens": MAX_OUTPUT_TOKENS,
         "store": False,
         "stream": False,
