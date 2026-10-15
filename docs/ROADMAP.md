@@ -1,9 +1,11 @@
 # Rolfbot modernization roadmap
 
-Planning baseline and Milestones 1–2 validation: **14 October 2026**. Phase 0 and
-**Milestones 1 and 2 are complete**. The package delivers an offline foundation
-and persistent SQLite usage protection. Milestones 3–7, all external integrations
-and deployment remain future work; the live bot is disabled.
+Planning baseline/Milestones 1–2: **14 October 2026**. Milestone 3 offline
+validation: **15 October 2026**. Phase 0 and Milestones 1–2 are complete.
+**Milestone 3 is implementation complete, pending authorized live smoke testing.**
+The package includes a bounded OpenAI service protected by SQLite accounting.
+Milestones 4–7 remain future work; the live bot is disabled and no real API call
+has been made.
 See the [README](../README.md) for tested setup and commands, and
 [YouTube research](YOUTUBE_RESEARCH.md) for the conditional music decision.
 
@@ -18,7 +20,7 @@ friend-group personality without adding unnecessary infrastructure or tools.
 | 0. Documentation — complete | Establish an accurate baseline | Source inspection and current research | Links, ignore rules and scope verified; legacy source unchanged |
 | 1. Runtime foundation — complete | Make future development reproducible and testable | Phase 0 | Validated configuration, parseable modules, offline tests and documented dependencies |
 | 2. Usage protection — complete | Enforce persistent quotas before paid access | Milestone 1 | Atomic reservation, lifecycle, restart, calendar and concurrency tests pass on Python 3.12/3.13 |
-| 3. OpenAI and billing | Deliver bounded asynchronous AI requests | Milestones 1–2; owner's billing setup before live calls | Mocked failures pass; later authorized smoke test confirms model and accounting |
+| 3. OpenAI — implementation complete, pending authorized live smoke testing | Deliver bounded asynchronous AI requests | Milestones 1–2; owner-managed billing configured | 258 offline tests pass on Python 3.12/3.13; live provider access/attribution remains unverified |
 | 4. Discord and scheduling | Restore commands and periodic messages safely | Milestones 1–3 | Slash commands, two-server isolation and reconnect/scheduling tests pass |
 | 5. Optional music | Decide feasibility, then implement if approved | Milestone 4; research and playback gates | Local and Vultr evidence plus acceptable terms/maintenance decision, or music disabled |
 | 6. Release readiness | Establish a releasable, tested build | Milestones 1–4; 5 if music enabled | Test matrix, configuration and operational review complete |
@@ -38,7 +40,8 @@ Delivered components:
   or duplicate executables. Imports are quiet and do not connect to services.
 - Linux CPython **3.12 and 3.13** support, tested on **3.12.15 and 3.13.16**.
   Python 3.12 remains the Ubuntu 24.04 production baseline. `pyproject.toml`
-  declares zero third-party runtime dependencies, setuptools **84.0.0** for
+  initially declared zero third-party runtime dependencies (Milestone 3 adds the
+  OpenAI SDK/HTTPX2), setuptools **84.0.0** for
   builds and pytest **9.1.1** for development; `requirements-dev.lock` pins the
   full build/test dependency set.
 - Explicit environment-only configuration. No dotenv dependency or implicit
@@ -51,7 +54,7 @@ Delivered components:
 - Consistent stderr logs for journald, redaction of configured credential values,
   and omission of exception/stack details even at DEBUG. No prompt content is logged.
 - `check-config` validates settings and exits offline. With valid configuration,
-  `run` refuses with exit code 3 until Milestones 3–4 are implemented. SIGINT/SIGTERM cancel async
+  `run` refuses with exit code 3 until Milestone 4 is ready. SIGINT/SIGTERM cancel async
   work, run cleanup and restore handlers; no continuous service is started.
 - An offline pytest harness that clears service settings, blocks network access
   and guards subprocess imports. `monkeypatch`, ordinary callables and `tmp_path`
@@ -62,9 +65,9 @@ Delivered components:
 | --- | --- |
 | `ROLFBOT_LOG_LEVEL` | Implemented; default INFO, validated standard level names |
 | `ROLFBOT_TIMEZONE` | Implemented; default Europe/Oslo, validated against installed IANA data |
-| `OPENAI_API_KEY`, `DISCORD_BOT_TOKEN` | Recognized and hidden from settings representations; optional/unused offline |
-| `OPENAI_MODEL` | Future-only, ignored now; planned default gpt-6-luna with no unapproved fallback |
-| `OPENAI_REASONING_EFFORT` | Future-only, ignored now; planned default none, evaluate low only if justified |
+| `OPENAI_API_KEY`, `DISCORD_BOT_TOKEN` | Hidden from representations; optional offline; OpenAI key required only for explicit client construction |
+| `OPENAI_MODEL` | Implemented; default and sole approved model gpt-6-luna; no fallback |
+| `OPENAI_REASONING_EFFORT` | Implemented; default and sole approved effort none |
 | `ROLFBOT_GUILD_CHANNELS` | Future-only, ignored now; private two-guild channel mapping |
 | `ROLFBOT_DATABASE_PATH` | Implemented in Milestone 2; optional offline, explicit absolute file path required for usage storage; production state outside release directories |
 
@@ -84,7 +87,8 @@ paid API call, Discord connection or billing change was performed.
 
 **Objective achieved:** an offline accounting component enforces persistent limits
 across independent connections, guild contexts and restarts. Every future AI entry
-point must use this component; no API or Discord entry point is enabled yet.
+point must use this component; Milestone 3 now integrates it into AIService while
+the CLI and all Discord functionality remain disabled.
 
 `usage.py` defines limits, validation and typed results. `usage_store.py` provides
 async reservation, dispatch, completion, refund and read-only status operations.
@@ -96,14 +100,14 @@ See the [README contracts and recovery guidance](../README.md#persistent-usage-p
 | AI requests globally | 100 per Oslo calendar day, including scheduled AI messages |
 | Per-user cooldown | 30 seconds across both servers, surviving restarts |
 | User input | At most 1,000 characters, checked before reservation/API dispatch |
-| AI output — future Milestone 3 requirement | At most 512 output tokens per API attempt; SQLite cannot enforce generation parameters |
+| AI output — implemented by Milestone 3 | At most 512 output tokens per API attempt, enforced in request parameters |
 
 ### Reservation and failure policy
 
 1. Future handlers validate guild/channel access first. The implemented component
    validates identifiers and input before storage, counts Unicode code points and
    rejects blank, malformed or oversized input without reserving capacity.
-2. Version-1 SQLite `attempts` records are the source of truth for daily counts,
+2. SQLite `attempts` records are the source of truth for daily counts,
    with indexed day/user queries and unique interaction/job attempt IDs. Separate
    `cooldowns` records preserve user expiry; `metadata` fixes the timezone.
    User identity is Discord user ID alone, not `(guild_id, user_id)`.
@@ -112,8 +116,8 @@ See the [README contracts and recovery guidance](../README.md#persistent-usage-p
    and persist cooldown expiry. Commit **before** any billable request. Never
    hold the transaction open during network I/O. Handle lock contention with
    bounded waits outside Discord's event loop; database failure denies AI access.
-4. Persist dispatch state before sending. Record completion afterward; recording
-   API token usage belongs to Milestone 3. Disable automatic SDK retries initially: one reservation
+4. Persist dispatch state before sending. Milestone 3 records completion and
+   available token counts afterward. Automatic SDK retries are disabled: one reservation
    permits one API attempt. Any future retry must obtain its own allowance and
    fit a bounded retry policy; no invisible extra paid attempts.
 5. Refund capacity only when it is provable that no request was dispatched, such
@@ -149,7 +153,8 @@ Initialization is explicit and creates owner-only files in an existing directory
 Normal operations cannot recreate missing storage. Existing empty/corrupt files,
 unknown schemas and timezone mismatches fail closed. Imports and `check-config`
 perform no database setup. Retain all attempts, including refunded tombstones;
-no expiry, replay, automatic migration or cleanup can reopen capacity. Production
+no expiry, replay, implicit migration or cleanup can reopen capacity. Milestone 3
+adds an explicit transactional version-1 to version-2 migration. Production
 backup/recovery must preserve usage and cooldowns together and reconcile any
 usage missing from an older snapshot before enabling AI.
 
@@ -168,52 +173,95 @@ and schema failures. Imports open no database or network connection, diagnostics
 remain sanitized, `run` stays disabled, both source/test compilations pass and
 `git diff --check` is clean.
 
-**Ready for Milestone 3's mocked integration work.** Runtime dependencies remain
-standard library only. No OpenAI/Discord call, scheduler, music functionality,
-VM access or billing verification/change was added. Production storage durability,
+**Milestone 2 provided the accounting foundation for Milestone 3.** Its storage
+implementation remains standard-library only. No live OpenAI/Discord call,
+scheduler, music functionality, VM access or billing verification/change was added.
+Production storage durability,
 backup restoration and release migration still require operational validation.
 
-## 3. OpenAI integration and cost protection
+## 3. OpenAI — implementation complete, pending authorized live smoke testing
 
 ### Asynchronous AI requests
 
-Use the supported `openai` Python SDK's `AsyncOpenAI` client and await the
-Responses API. Set explicit connect/read/overall deadlines and close the client
-on shutdown. The SDK has automatic retries by default; configure `max_retries=0`
-for the first implementation so accounting controls every attempt.
-[Official Python SDK reference](https://developers.openai.com/api/reference/python).
+Implemented components:
 
-Keep the requested model **`gpt-6-luna`**, selectable through `OPENAI_MODEL`.
-Start with `reasoning.effort="none"` for short social replies: this is a supported
-setting and preserves the legacy non-reasoning workload. Compare `low` only if
-representative examples justify the extra cost/latency. Standard short-context
-rates currently list $0.10 per million input tokens and $0.50 per million output
-tokens; verify rates again before enabling paid access.
-[GPT-6 Luna model documentation](https://developers.openai.com/api/docs/models/gpt-6-luna).
+- `AIService` is the only public generation interface, shared by user and future
+  scheduled requests. It always reserves SQLite capacity, prepares the bounded
+  request, persists dispatch and requires exactly `DISPATCH_GRANTED` before one
+  send. There is no recovery replay or alternate public unaccounted send method.
+- The private `openai_client.py` layer uses official **openai 3.31.0** with
+  **httpx2 2.13.1**, pinned alongside the full dependency closure. It constructs
+  `AsyncOpenAI` lazily, with `max_retries=0`, an explicit key and official endpoint,
+  no redirects/proxy-environment configuration, and no ambient billing/key override.
+  [Official release](https://github.com/openai/openai-python/releases/tag/v3.31.0),
+  [SDK reference](https://developers.openai.com/api/reference/python).
+- Model and effort settings are validated allowlists: **gpt-6-luna** and **none**
+  only. Every Responses request sets **512 output tokens**, `store=False`, no
+  streaming/background work, no tools and no continuation/history. User input is
+  one validated message; scheduled input and the friendly, playful persona are
+  centralized bounded constants. No live-weather or tool capability is claimed.
+  [Model](https://developers.openai.com/api/docs/models/gpt-6-luna),
+  [Responses API](https://developers.openai.com/api/reference/python/resources/responses/methods/create).
+- Two immediate generation slots cover admission through finalization. There is
+  no in-memory waiting queue; `BUSY` consumes no quota. Network timeouts are
+  connect 5 s, read 25 s, write 5 s and pool 1 s, inside a 30 s overall network
+  deadline. SQLite remains on worker threads with bounded lock waits. Shutdown
+  cancels active requests and owns async client cleanup even if its caller cancels.
+- Only confirmed local abandonment before dispatch can refund; lost reservation
+  results, attempted dispatch transitions, API timeouts/cancellation and failed
+  completion writes retain capacity. Completion failure cannot trigger a repeat
+  send. Available counts can remain unknown if persistence fails.
+- Completed text is limited to 1,800 UTF-16 units and checked for empty/malformed,
+  incomplete, refused, oversized or unsafe-control output. Failure produces safe
+  categories without automatic continuation. Discord sending/mention controls
+  remain Milestone 4 work.
+- Transient failures apply monotonic 30/60/120/240/300-second cooldowns, capped at
+  300 s, with no automatic retry. Billing limits, exhausted credit, credentials,
+  permissions and request-configuration failures latch the service disabled.
+  The block is persisted with completion and checked at reserve/dispatch. Recovery
+  requires owner remediation, a closed service, explicit `clear_ai_block()` and a
+  new service instance. A failed block write still stops the running process;
+  reconcile storage before restart. Already-started requests may still finish.
+- Logs contain only derived correlation IDs, outcome, model, duration, safe HTTP
+  status, token counts and accounting status. Raw SDK/transport logs are suppressed;
+  prompts, answers, headers, provider error bodies and user IDs are never logged.
+  `store=False` is not a guarantee against abuse-monitoring retention.
+  [Data controls](https://developers.openai.com/api/docs/guides/your-data).
 
-Set `max_output_tokens=512`, covering **both visible output and reasoning tokens**.
-Handle incomplete responses and empty text without increasing the cap or making
-automatic continuation calls. A token cap does not guarantee Discord's character
-limit; also bound/split the message safely at delivery.
-[Responses API reference](https://developers.openai.com/api/reference/python/resources/responses/methods/create).
+### Schema and usage tracking
 
-- Preserve the existing persona in concise instructions, with one bounded user
-  message and no accumulated conversation history initially. Send no tools and
-  perform no weather lookup or other auxiliary calls. Do not imply live weather
-  knowledge in periodic messages.
-- Review request fields during migration; do not mechanically copy `n`, `stop`
-  or legacy sampling settings. If reasoning is enabled, remove unsupported
-  sampling parameters such as `temperature`.
-  [GPT-6 migration guidance](https://developers.openai.com/api/docs/guides/latest-model/gpt-6-astra#migration-quickstart).
-- Limit concurrent requests and waiting work. Keep all network and potentially
-  blocking storage work off the Discord event loop. Defer Discord interactions
-  promptly while waiting for a response.
-- Distinguish invalid credentials, unavailable models, malformed requests,
-  timeouts, transient rate limiting, upstream outages and exhausted billing.
-  Return friendly errors; log sanitized error categories/request IDs.
-- Back off after repeated failures with a bounded service cooldown. Billing
-  limit errors disable generation until the owner resolves them or the limit
-  resets; never retry them in a loop or switch to a more expensive model.
+Version 2 adds nullable integer input/output token counts to `attempts` and a
+nullable provider block to `metadata`. `UsageStore.migrate()` upgrades an existing
+version-1 file in one `BEGIN IMMEDIATE` transaction, preserving all records,
+cooldowns, indexes and timezone. It is explicit, repeat-safe and rejects unknown
+schemas; normal operations never migrate or recreate state. Completion persists
+numeric metadata and any block atomically; duplicate completion cannot overwrite
+counts. Missing/invalid counts are unknown (`NULL`), not zero. Prompt/answer
+contents are never persisted. Raw JSON types are checked before counting usage.
+
+Stop writers and back up before migration. Old Milestone 2 binaries reject schema
+2, so rollback requires a compatible release, not restoring stale accounting.
+See [database recovery](../README.md#database-location-and-recovery).
+
+### Offline acceptance evidence
+
+**258 tests passed on each of CPython 3.12.15 and 3.13.16.** The suite retains
+all earlier quota, calendar, independent-connection and process-restart coverage.
+New tests run the real SDK over mocked HTTP and assert a committed, unused
+dispatch for every simulated send. They cover exact request settings, no hidden
+retries even with retry headers, quota/duplicate/storage denials, concurrency
+slots, cancellations at each lifecycle boundary, timeouts, provider errors,
+persistent blocks, backoff, output/Unicode limits, usage metadata and privacy.
+Actual file-backed v1 fixtures verify preservation, transactional rollback and
+repeat migration. Imports remain database/network/client-free, `check-config`
+works without credentials, and `run` refuses startup. Both compilations, locked
+dependency installations, `pip check` and `git diff --check` pass.
+
+**Offline Milestone 3 acceptance is satisfied.** Live API/project attribution,
+model availability and response quality are unverified. No real credentials,
+provider call, Discord connection, scheduler, music, VM access or billing change
+was used. The implementation is ready for Milestone 4 integration work, with a
+separate authorized live smoke test still required for end-to-end acceptance.
 
 ### Owner-managed billing prerequisite
 
@@ -221,29 +269,28 @@ On 14 October 2026, the owner reported manually configuring a dedicated
 **Rolfbot** project, GPT-6 Luna as the intended model, a restricted key, a **$2 USD
 enforced monthly limit**, a **$1 USD alert**, and **$5 USD prepaid credit** with
 **automatic recharging disabled**. This is owner-reported status: the agent did
-not inspect, verify or change these settings during Milestone 2. No credentials
+not inspect, verify or change these settings during Milestones 2–3. No credentials
 or payment details were read. Live API tests still need separate authorization;
-the next milestone starts with offline mocks.
+Milestone 3 used offline mocks only.
 
 Current OpenAI documentation distinguishes alerts, which allow traffic to
 continue, from enforced project/organization spend caps. Hard-limit errors use
 HTTP 429 with `project_spend_limit_exceeded` or
 `organization_spend_limit_exceeded`. Enforcement may lag slightly, so **$2 is
 not an absolute guarantee against any overrun**. Account settings have not been
-inspected or changed by the agent in Phase 0 or Milestones 1–2. The owner remains
+inspected or changed by the agent in Phase 0 or Milestones 1–3. The owner remains
 responsible for maintaining the controls before live use.
 [OpenAI spend limits](https://developers.openai.com/api/docs/guides/spend-limits).
 
 The daily quotas complement the billing controls; request counts alone are not
 a dollar cap. For scale, 100 daily attempts × 31 days × 512 output tokens at the
-listed Standard output rate is about **$0.79 in output alone**. Input, cache-write
+planning rate ($0.50 per million output tokens) is about **$0.79 in output alone**.
+Recheck current pricing before live use. Input, cache-write
 charges where applicable, other pricing tiers and future price changes must also
 be budgeted. Characters are not tokens. Record actual usage without storing
 message content, and review spending at the $1 warning.
 
-**Acceptance:** mocked tests verify reservation-before-dispatch, model/effort and
-512-token settings, disabled retries, error handling and clean shutdown. After
-owner billing setup and live-test authorization, a small smoke test verifies
+**Remaining live acceptance:** after separate authorization, a small smoke test verifies
 project attribution, model access, useful replies and usage reporting. Do not
 spend through the cap to test enforcement; simulate those errors locally.
 
@@ -340,7 +387,7 @@ procedure; Milestone 1 only verifies the offline foundation's installation.
 
 **Target:** the existing Ubuntu 24.04 Vultr VM serving `nilsherman.no` through
 nginx as a static site. No production access or changes were made in Phase 0 or
-Milestones 1–2.
+Milestones 1–3.
 
 - Run as a dedicated, unprivileged Linux service user with an isolated virtual
   environment and versioned release directories. Keep persistent SQLite state
@@ -383,4 +430,4 @@ separate feasibility gate passed.
 | VM resource ceilings and maintenance window | Deployment planning | Measure available headroom; protect the existing website |
 
 No project, key, card, provider service, Discord setting or deployment resource
-has been created or configured by the agent during Phase 0 or Milestones 1–2.
+has been created or configured by the agent during Phase 0 or Milestones 1–3.

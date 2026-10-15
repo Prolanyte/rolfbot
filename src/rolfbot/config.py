@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 CREDENTIAL_NAMES = ("OPENAI_API_KEY", "DISCORD_BOT_TOKEN")
+APPROVED_MODEL = "gpt-6-luna"
+APPROVED_REASONING = "none"
 
 
 class ConfigurationError(ValueError):
@@ -18,6 +20,8 @@ class ConfigurationError(ValueError):
 class Settings:
     log_level: str
     timezone: ZoneInfo
+    openai_model: str = APPROVED_MODEL
+    openai_reasoning_effort: str = APPROVED_REASONING
     database_path: Path | None = field(default=None, repr=False)
     openai_api_key: str | None = field(default=None, repr=False)
     discord_bot_token: str | None = field(default=None, repr=False)
@@ -77,9 +81,12 @@ def load_settings(
     """Load only implemented settings; requirements validate but never enable clients.
 
     Offline callers leave both requirements false. Future integrations must
-    explicitly request their credentials; neither SDK exists in this package.
+    explicitly request their credentials; loading settings creates no client.
     """
     source = os.environ if environ is None else environ
+    model = source.get("OPENAI_MODEL", APPROVED_MODEL)
+    reasoning = source.get("OPENAI_REASONING_EFFORT", APPROVED_REASONING)
+    validate_openai_options(model, reasoning)
     level = source.get("ROLFBOT_LOG_LEVEL", "INFO").strip().upper()
     if level not in LOG_LEVELS:
         raise ConfigurationError(
@@ -98,6 +105,8 @@ def load_settings(
     return Settings(
         log_level=level,
         timezone=timezone,
+        openai_model=model,
+        openai_reasoning_effort=reasoning,
         database_path=(
             database_path(source["ROLFBOT_DATABASE_PATH"])
             if "ROLFBOT_DATABASE_PATH" in source else None
@@ -107,3 +116,20 @@ def load_settings(
             source, "DISCORD_BOT_TOKEN", required=require_discord
         ),
     )
+
+
+def validate_openai_options(model: str, reasoning: str) -> None:
+    if model != APPROVED_MODEL:
+        raise ConfigurationError("OPENAI_MODEL must be the approved gpt-6-luna model.")
+    if reasoning != APPROVED_REASONING:
+        raise ConfigurationError("OPENAI_REASONING_EFFORT must be none.")
+
+
+def require_openai_key(settings: Settings) -> str:
+    """Validate explicit settings again at client construction; never consult env."""
+    validate_openai_options(settings.openai_model, settings.openai_reasoning_effort)
+    key = _credential(
+        {"OPENAI_API_KEY": settings.openai_api_key or ""}, "OPENAI_API_KEY", required=True
+    )
+    assert key is not None
+    return key

@@ -19,11 +19,11 @@ from zoneinfo import ZoneInfo
 from rolfbot.config import ConfigurationError, database_path
 from rolfbot.usage import (
     COOLDOWN, GLOBAL_DAILY_LIMIT, USER_DAILY_LIMIT, Code, Moment, QuotaStatus,
-    Result, State, from_microseconds, moment, valid_attempt_id, valid_discord_id,
+    Result, State, TokenUsage, BlockReason, from_microseconds, moment, valid_attempt_id, valid_discord_id,
     validate_input,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 LOCK_TIMEOUT_SECONDS = 0.25
 
 _SCHEMA = (
@@ -50,6 +50,12 @@ _SCHEMA = (
     "CREATE INDEX global_usage ON attempts(day) WHERE state != 'refunded'",
     "CREATE INDEX user_usage ON attempts(user_id, day) WHERE state != 'refunded'",
     "CREATE TABLE cooldowns (user_id TEXT PRIMARY KEY NOT NULL, until_us INTEGER NOT NULL)",
+)
+
+_MIGRATION_2 = (
+    "ALTER TABLE attempts ADD COLUMN input_tokens INTEGER CHECK(input_tokens IS NULL OR (typeof(input_tokens) = 'integer' AND input_tokens >= 0))",
+    "ALTER TABLE attempts ADD COLUMN output_tokens INTEGER CHECK(output_tokens IS NULL OR (typeof(output_tokens) = 'integer' AND output_tokens >= 0))",
+    "ALTER TABLE metadata ADD COLUMN ai_block TEXT CHECK(ai_block IS NULL OR ai_block IN ('project_limit', 'organization_limit', 'credit_exhausted', 'billing_limit', 'authentication', 'permission', 'configuration'))",
 )
 
 
@@ -90,6 +96,41 @@ class UsageStore:
         """
         return await asyncio.to_thread(self._initialize)
 
+    async def migrate(self) -> Result:
+        """Explicit, transactional v1 -> v2 migration of existing storage only.
+
+        Back up first. Repeat-safe on v2. No state is removed or reset; older
+        application versions will reject v2. Ordinary operations never migrate.
+        """
+        def migrate(connection: sqlite3.Connection) -> Result:
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+            if version not in (1, SCHEMA_VERSION):
+                raise sqlite3.DatabaseError("Unsupported schema")
+            self._verify(connection, version=version)
+            if connection.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+                raise sqlite3.DatabaseError("Integrity failure")
+            if version == 1:
+                self._migrate_v2(connection)
+            return Result(Code.OK)
+
+        return await asyncio.to_thread(self._transaction, migrate, new=True)
+
+    async def clear_ai_block(self) -> Result:
+        """Operator-only recovery after fixing billing/configuration; no retries.
+
+        The running AI service must also be closed/recreated. Never call this
+        automatically or expose it to ordinary Discord requests.
+        """
+        def clear(connection: sqlite3.Connection) -> Result:
+            connection.execute("UPDATE metadata SET ai_block = NULL WHERE singleton = 1")
+            return Result(Code.OK)
+        return await asyncio.to_thread(self._transaction, clear)
+
+    @staticmethod
+    def _block(connection: sqlite3.Connection) -> BlockReason | None:
+        value = connection.execute("SELECT ai_block FROM metadata WHERE singleton = 1").fetchone()[0]
+        return BlockReason(value) if value is not None else None
+
     async def reserve_user(
         self, user_id: str, attempt_id: str, text: str, *,
         now: datetime, guild_id: str | None = None,
@@ -113,6 +154,8 @@ class UsageStore:
             return Result(Code.INVALID_TIME)
 
         def reserve(connection: sqlite3.Connection) -> Result:
+            if block := self._block(connection):
+                return Result(Code.SERVICE_DISABLED, block_reason=block)
             if connection.execute("SELECT 1 FROM attempts WHERE attempt_id = ?", (attempt_id,)).fetchone():
                 return Result(Code.DUPLICATE_ATTEMPT)
             quota = self._status(connection, user_id, at)
@@ -149,15 +192,28 @@ class UsageStore:
         """Commit before the API call. Repeated dispatch NEVER grants permission."""
         return await self._transition(attempt_id, State.DISPATCHED, now)
 
-    async def complete(self, attempt_id: str, *, now: datetime) -> Result:
-        """Record that a dispatched attempt ended, successfully or with an error."""
-        return await self._transition(attempt_id, State.COMPLETED, now)
+    async def complete(
+        self, attempt_id: str, *, now: datetime, usage: TokenUsage | None = None,
+        block_reason: BlockReason | None = None,
+    ) -> Result:
+        """Finalize state, numeric usage and any service block in one commit.
+
+        First completion wins; duplicates cannot overwrite usage or lift a block.
+        """
+        if usage is not None and not isinstance(usage, TokenUsage):
+            raise ValueError("Expected validated token usage.")
+        if block_reason is not None and not isinstance(block_reason, BlockReason):
+            raise ValueError("Expected a safe service block reason.")
+        return await self._transition(attempt_id, State.COMPLETED, now, usage, block_reason)
 
     async def refund_undispatched(self, attempt_id: str, *, now: datetime) -> Result:
         """Refund only reserved state; preserve cooldown and the replay tombstone."""
         return await self._transition(attempt_id, State.REFUNDED, now)
 
-    async def _transition(self, attempt_id: str, target: State, now: datetime) -> Result:
+    async def _transition(
+        self, attempt_id: str, target: State, now: datetime,
+        usage: TokenUsage | None = None, block_reason: BlockReason | None = None,
+    ) -> Result:
         if not valid_attempt_id(attempt_id):
             return Result(Code.INVALID_IDENTIFIER)
         at = moment(now, self.timezone)
@@ -181,6 +237,8 @@ class UsageStore:
                 return Result(Code.INVALID_TRANSITION, state)
             timestamp = max(at.microseconds, row[1], row[2] or row[1])
             if target == State.DISPATCHED:
+                if block := self._block(connection):
+                    return Result(Code.SERVICE_DISABLED, state, block_reason=block)
                 connection.execute(
                     "UPDATE attempts SET state = 'dispatched', dispatched_us = ? WHERE attempt_id = ?",
                     (timestamp, attempt_id),
@@ -190,6 +248,17 @@ class UsageStore:
                 "UPDATE attempts SET state = ?, finished_us = ? WHERE attempt_id = ?",
                 (target.value, timestamp, attempt_id),
             )
+            if target == State.COMPLETED:
+                counts = usage or TokenUsage()
+                connection.execute(
+                    "UPDATE attempts SET input_tokens = ?, output_tokens = ? WHERE attempt_id = ?",
+                    (counts.input_tokens, counts.output_tokens, attempt_id),
+                )
+                if block_reason is not None:
+                    connection.execute(
+                        "UPDATE metadata SET ai_block = COALESCE(ai_block, ?) WHERE singleton = 1",
+                        (block_reason.value,),
+                    )
             return Result(Code.COMPLETED if target == State.COMPLETED else Code.REFUNDED, target)
 
         return await asyncio.to_thread(self._transaction, transition)
@@ -203,7 +272,10 @@ class UsageStore:
             return Result(Code.INVALID_TIME)
         return await asyncio.to_thread(
             self._transaction,
-            lambda connection: Result(Code.OK, quota=self._status(connection, user_id, at)),
+            lambda connection: Result(
+                Code.OK, quota=self._status(connection, user_id, at),
+                block_reason=self._block(connection),
+            ),
             write=False,
         )
 
@@ -240,8 +312,8 @@ class UsageStore:
             connection.close()
             raise
 
-    def _verify(self, connection: sqlite3.Connection) -> None:
-        if connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+    def _verify(self, connection: sqlite3.Connection, *, version: int = SCHEMA_VERSION) -> None:
+        if connection.execute("PRAGMA user_version").fetchone()[0] != version:
             raise sqlite3.DatabaseError("Unsupported schema")
         if connection.execute("SELECT timezone FROM metadata WHERE singleton = 1").fetchone() != (self.timezone.key,):
             raise sqlite3.DatabaseError("Usage timezone mismatch")
@@ -251,6 +323,15 @@ class UsageStore:
             "dispatched_us, finished_us FROM attempts LIMIT 0"
         )
         connection.execute("SELECT user_id, until_us FROM cooldowns LIMIT 0")
+        if version == 2:
+            connection.execute("SELECT input_tokens, output_tokens FROM attempts LIMIT 0")
+            self._block(connection)
+
+    @staticmethod
+    def _migrate_v2(connection: sqlite3.Connection) -> None:
+        for statement in _MIGRATION_2:
+            connection.execute(statement)
+        connection.execute("PRAGMA user_version = 2")
 
     def _transaction(
         self, operation: Callable[[sqlite3.Connection], Result], *,
@@ -286,7 +367,7 @@ class UsageStore:
                 for statement in _SCHEMA:
                     connection.execute(statement)
                 connection.execute("INSERT INTO metadata VALUES (1, ?)", (self.timezone.key,))
-                connection.execute("PRAGMA user_version = 1")
+                self._migrate_v2(connection)
             else:
                 if connection.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
                     raise sqlite3.DatabaseError("Integrity failure")

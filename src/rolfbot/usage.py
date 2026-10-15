@@ -32,6 +32,30 @@ class Code(StrEnum):
     NOT_FOUND = "not_found"
     INVALID_TRANSITION = "invalid_transition"
     STORAGE_UNAVAILABLE = "storage_unavailable"
+    SERVICE_DISABLED = "service_disabled"
+
+
+class BlockReason(StrEnum):
+    PROJECT_LIMIT = "project_limit"
+    ORGANIZATION_LIMIT = "organization_limit"
+    CREDIT_EXHAUSTED = "credit_exhausted"
+    BILLING_LIMIT = "billing_limit"
+    AUTHENTICATION = "authentication"
+    PERMISSION = "permission"
+    CONFIGURATION = "configuration"
+
+
+@dataclass(frozen=True, slots=True)
+class TokenUsage:
+    """Reported counts only; unknown is None, never an invented zero."""
+
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+    def __post_init__(self) -> None:
+        for value in (self.input_tokens, self.output_tokens):
+            if value is not None and (type(value) is not int or not 0 <= value <= 2**63 - 1):
+                raise ValueError("Token counts must be nonnegative SQLite integers or unknown.")
 
 
 class State(StrEnum):
@@ -62,6 +86,7 @@ class Result:
     state: State | None = None
     next_eligible_at: datetime | None = None
     quota: QuotaStatus | None = None
+    block_reason: BlockReason | None = None
 
 
 def validate_input(value: object) -> Result:

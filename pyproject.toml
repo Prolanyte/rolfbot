@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "An offline runtime foundation for a small Discord friend-group bot"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
-dependencies = []
+dependencies = ["openai==3.31.0", "httpx2==2.13.1"]
 
 [project.optional-dependencies]
 dev = ["pytest==9.1.1"]

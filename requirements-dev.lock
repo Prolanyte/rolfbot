@@ -1,9 +1,22 @@
-# Exact Linux build/test dependency versions for Python 3.12 and 3.13.
-# Runtime dependencies: none. Direct requirements live in pyproject.toml.
-# Install this file before the editable package (see README.md).
+# Exact Linux runtime/build/test versions for Python 3.12 and 3.13.
+# Direct requirements live in pyproject.toml. Install before the package.
+annotated-types==0.8.0
+anyio==4.15.1
+h11==0.16.0
+httpcore2==2.13.1
+httpx2==2.13.1
+idna==3.20
 iniconfig==2.3.1
+jiter==0.17.0
+openai==3.31.0
 packaging==26.3
 pluggy==1.6.0
-Pygments==2.21.0
+pydantic==2.14.1
+pydantic-core==2.50.1
+pygments==2.21.0
 pytest==9.1.1
 setuptools==84.0.0
+sniffio==1.3.1
+truststore==0.10.5
+typing-extensions==4.16.0
+typing-inspection==0.4.4

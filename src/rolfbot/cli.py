@@ -25,7 +25,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check-config", help="validate configuration offline (no credentials needed)")
-    commands.add_parser("run", help="refuse startup until external integrations are implemented")
+    commands.add_parser("run", help="refuse startup until Discord integration is ready")
     return parser
 
 
@@ -44,7 +44,7 @@ async def _execute(command: str) -> int:
             return 0
         logger.error(
             "event=startup_refused Bot runtime is unavailable: implement the "
-            "OpenAI/Discord integrations first (Milestones 3–4)."
+            "Discord integration first (Milestone 4); live AI testing is pending."
         )
         return 3
     finally:

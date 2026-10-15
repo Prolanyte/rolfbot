@@ -62,7 +62,7 @@ def test_run_always_refuses_even_with_credentials_and_future_settings(cli_proces
     })
     assert result.returncode == 3
     assert "startup_refused" in result.stderr
-    assert "Milestones 3–4" in result.stderr
+    assert "Milestone 4" in result.stderr
     assert "event=shutdown" in result.stderr
     assert "synthetic-" not in result.stdout + result.stderr
 
@@ -121,10 +121,11 @@ def test_invalid_database_path_diagnostic_is_safe(cli_process):
     assert "private-relative-path" not in result.stdout + result.stderr
 
 
-def test_installed_package_has_no_runtime_dependencies():
+def test_installed_package_has_only_approved_runtime_dependencies():
     requirements = importlib.metadata.requires("rolfbot") or []
-    assert all('extra == "dev"' in requirement for requirement in requirements)
-    for name in ("discord.py", "openai", "yt-dlp", "youtube_dl"):
+    runtime = {requirement for requirement in requirements if 'extra == "dev"' not in requirement}
+    assert runtime == {"openai==3.31.0", "httpx2==2.13.1"}
+    for name in ("discord.py", "yt-dlp", "youtube_dl"):
         with pytest.raises(importlib.metadata.PackageNotFoundError):
             importlib.metadata.distribution(name)
 

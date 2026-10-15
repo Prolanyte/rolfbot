@@ -12,6 +12,8 @@ def test_defaults_and_immutable_settings():
     assert settings.openai_api_key is None
     assert settings.discord_bot_token is None
     assert settings.database_path is None
+    assert settings.openai_model == "gpt-6-luna"
+    assert settings.openai_reasoning_effort == "none"
     with pytest.raises(FrozenInstanceError):
         settings.log_level = "DEBUG"
 
@@ -101,11 +103,21 @@ def test_required_credentials_reject_whitespace_without_echo(value):
 
 def test_future_settings_do_not_enable_or_configure_integrations():
     settings = load_settings({
-        "OPENAI_MODEL": "unapproved-expensive-model",
-        "OPENAI_REASONING_EFFORT": "max",
         "ROLFBOT_GUILD_CHANNELS": "not a mapping",
     })
     assert settings == load_settings({})
+
+
+@pytest.mark.parametrize("name,value", [
+    ("OPENAI_MODEL", "unapproved-expensive-model"), ("OPENAI_MODEL", ""),
+    ("OPENAI_MODEL", "gpt-6-luna "), ("OPENAI_MODEL", "private\nmodel"),
+    ("OPENAI_REASONING_EFFORT", "low"), ("OPENAI_REASONING_EFFORT", "max"),
+    ("OPENAI_REASONING_EFFORT", ""), ("OPENAI_REASONING_EFFORT", "NONE"),
+])
+def test_openai_policy_settings_reject_unapproved_values(name, value):
+    with pytest.raises(ConfigurationError, match=name) as caught:
+        load_settings({name: value})
+    assert "private" not in str(caught.value)
 
 
 def test_database_path_is_validated_without_file_access(tmp_path):
