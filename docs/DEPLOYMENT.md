@@ -1,17 +1,19 @@
 # Controlled Vultr deployment
 
-**Status: Gate A approved and staging complete; Gate B is NOT approved.** Release
-**`9a4500aa1cc3272471b6492c6c4ec96527ebc7dd`** was installed on 15 October 2026;
-final staging checks completed around **21:33 UTC**. Rolfbot remains stopped,
-not enabled at boot and persistently masked. Protected credentials are installed;
-the production database is absent. The unchanged local database remains
-authoritative. No live Discord or OpenAI connections were made during staging.
-Owner-reported local live checks are separate from pending production acceptance.
+**Status: Gate B complete; production active and enabled at boot.**
+Release **`9a4500aa1cc3272471b6492c6c4ec96527ebc7dd`** started on
+**16 October 2026 at 00:09:21 Europe/Oslo (15 October, 22:09:21 UTC)**.
+Discord connected and command synchronization succeeded. Historical SQLite was
+transferred and validated; **production SQLite is now authoritative**. Keep the
+local instance stopped. Owner live acceptance passed, followed by boot enablement
+and one successful controlled restart at **00:21:28 Europe/Oslo**. Final checks
+completed at **00:22:13 Europe/Oslo**. No VM reboot was performed.
 
-The owner's deployment request requires explicit approval before VM changes and
-a second approval immediately before live cutover. This document is a staged
-procedure, not authorization to execute all its commands. Keep a trusted SSH
-connection open. Scheduling, personality customization and music remain disabled.
+The owner explicitly approved both staging and cutover, confirmed the historical
+VM has been inactive for years, and confirmed clean local shutdown. Final local
+and target process checks passed. The historical VM needs no further investigation.
+Keep a trusted SSH connection open. Scheduling, personality customization, music
+and additional guilds/channels remain disabled.
 
 ## Pre-staging baseline (Phase A)
 
@@ -59,9 +61,9 @@ ran offline with networking disabled.
 - No local Rolfbot process was detected at inspection. Recheck immediately before
   cutover. Only the owner can confirm whether another, older VM still runs it.
 
-## Approved Gate A layout
+## Paths and service layout
 
-The staged filesystem/account changes are:
+The production filesystem/account layout is:
 
 | Location | Ownership/mode and purpose |
 | --- | --- |
@@ -70,17 +72,18 @@ The staged filesystem/account changes are:
 | `/opt/rolfbot/current` | Root-managed symlink to the reviewed release |
 | `/opt/rolfbot/staging/<full SHA>/` | Root-owned non-secret artifacts, manifests and separate offline test environment |
 | `/var/lib/rolfbot/` | `rolfbot:rolfbot`, 0700; only persistent runtime writable directory |
-| `/var/lib/rolfbot/usage.sqlite3` | `rolfbot:rolfbot`, 0600; installed only during gate-B cutover |
+| `/var/lib/rolfbot/usage.sqlite3` | `rolfbot:rolfbot`, 0600; authoritative production accounting |
 | `/var/backups/rolfbot/` | `root:root`, 0700; accounting backups, never application releases |
 | `/etc/rolfbot/rolfbot.env` | Directory 0700 and file 0600, root-owned; PID 1 passes settings to the service |
-| `/etc/systemd/system/rolfbot.service` | Persistent mask: symlink to `/dev/null`; no boot enablement links |
-| `/opt/rolfbot/staging/<full SHA>/rolfbot.service` | Root-owned 0644 candidate, validated and retained until Gate B |
+| `/etc/systemd/system/rolfbot.service` | Root-owned 0644 production unit; active/enabled and identical to the reviewed staging definition |
+| `/opt/rolfbot/staging/<full SHA>/rolfbot.service` | Root-owned 0644 retained, validated unit definition |
 
 The initial runtime-mask proposal was corrected before installing anything:
 systemd searches `/etc/systemd/system` before `/run/systemd/system`, so a real
 unit in `/etc` would override a runtime mask. A persistent `/etc` mask was the
-first VM change and stayed in place throughout staging. The candidate definition
-remains under `/opt`; it must only replace the mask after Gate B approval.
+first VM change and stayed in place throughout staging. After approved Gate B
+storage checks, the mask was removed and the reviewed definition installed in
+`/etc`. The retained definition remains under `/opt`.
 
 Install only the three simulated venv packages with
 `NEEDRESTART_MODE=l apt-get install --no-install-recommends python3.12-venv`, after reviewing the actual
@@ -234,11 +237,9 @@ Never rebuild the application for key rotation or modify billing settings.
 
 ## Gate B: one-instance accounting cutover
 
-Before requesting gate B, show the exact staged SHA, tests, permissions, website
-health and service state. Obtain explicit approval to stop the local bot, transfer
-final SQLite state, activate production and perform a few owner-driven Discord
-checks. **Ask the owner to confirm every old VM instance is stopped.** Local
-inspection cannot prove the absence of a bot on an unrelated host.
+Gate B and duplicate-instance confirmation were supplied explicitly by the owner.
+The following procedure was authorized for this cutover; it does not authorize
+another database replacement or a new live test session later.
 
 After approval:
 
@@ -299,16 +300,17 @@ Compare aggregate production usage/token counts with the cutover summary. The
 owner checks the Rolfbot OpenAI project dashboard after reporting delay; a running
 systemd process alone does not prove API acceptance or project attribution.
 
-After successful live checks, perform a controlled graceful stop/start, preserve
-the same DB, check cooldown/quota continuity, one startup sync per guild, no replay,
-no lingering process and website health. Verify bounded restart settings and
-`NRestarts`; do not inject paid API failures. Enable at boot only after successful
-validation, using `systemctl enable rolfbot.service` and `systemctl is-enabled`.
+After successful live checks, enable at boot with `systemctl enable rolfbot.service`
+and verify `systemctl is-enabled`, then perform one controlled graceful restart,
+as requested in the Gate B authorization. Preserve the same DB and verify all
+accounting/cooldowns, one startup sync per guild, no replay, no lingering process
+and website health. Check bounded restart settings and `NRestarts`; do not inject
+paid API failures. Stop and disable the service if acceptance or restart fails.
 Do not reboot the VM without separate owner authorization.
 
-Record exact deployed SHA/date, Ubuntu Python/package versions, artifacts' hashes,
-actual limits, offline/live results, restart observations and any deviations here.
-Until then, these remain pending acceptance items.
+The verification record below contains the deployed SHA/date, package versions,
+artifact hashes, effective limits, live results and restart evidence. Future
+releases need their own acceptance record; these results describe this release.
 
 ## Operations, rollback and backups
 
@@ -358,7 +360,7 @@ if separate databases may have accepted requests. Preserve both databases; do no
 merge counts or restart until accounting is reconciled. Never resume the local bot
 while production remains active.
 
-## Verification record and remaining gates
+## Gate A verification record
 
 - Phase A: exact clean application commit verified; **432 original offline tests
   passed on Python 3.12.15 and 3.13.16**. Runtime-only installation, `pip check`,
@@ -393,7 +395,7 @@ while production remains active.
   50% CPU, CPUWeight=10, IOWeight=10 and TasksMax=64**; both descriptor limits were
   256. The probe confirmed no effective capabilities, `NoNewPrivileges`, read-only
   system mounts, protected code/config/backups and an accessible state directory.
-  Actual provider/gateway networking and production load still require Gate B.
+  Actual provider/gateway networking and production load were deferred to Gate B.
 - Credentials were streamed directly through verified SSH stdin. The directory
   is `root:root` **0700**, the file `root:root` **0600**, and the service user cannot
   read it. A second transient process loaded it through systemd EnvironmentFile
@@ -420,9 +422,168 @@ while production remains active.
   at **27 MiB**, free disk **16 GiB**, inode use **3%**. `/opt/rolfbot` uses **192 MiB**,
   including the separate test environment. Capacity is sufficient for the proposed
   cap, subject to observing real gateway use after approval.
-- **Stopped at Gate B.** Final accounting transfer, live activation, owner
+- **Gate A stopped at Gate B.** At that point, final accounting transfer, live activation, owner
   acceptance, restart checks and boot enablement have not happened. No commit or
   push was made; local deployment assets and documentation remain uncommitted.
-- Remaining operational limits: real gateway resource use needs observation;
-  filesystem/power-loss durability is not proven by integrity checks; off-host
-  backup retention and owner confirmation of old-VM shutdown remain necessary.
+- At the end of Gate A, real gateway observation and owner confirmation of old-VM
+  shutdown were pending; both are addressed in Gate B below. Integrity checks do
+  not prove power-loss durability, and ongoing off-host backup retention still
+  needs an operational policy.
+
+## Gate B cutover evidence — 16 October 2026 (Europe/Oslo)
+
+The deployment checkout was clean at
+`68d937ad7de2860344f89f5e64903a471d62bc37` when this task began. That existing
+commit records Gate A operational files and documentation; it changes no
+application source or application dependency configuration relative to the
+approved production release `9a4500aa1cc3272471b6492c6c4ec96527ebc7dd`.
+The approved application SHA remains the deployed release. No commit or push is
+part of this cutover task.
+
+### Why 463 local tests and 432 target tests
+
+The deployed application revision `9a4500aa1cc3272471b6492c6c4ec96527ebc7dd`
+contains **432 application tests**. They passed locally on Python **3.12.15**
+(regular wheel) and **3.13.16** (editable install), and the exact committed suite
+passed during Gate A on Ubuntu **3.12.3** in a separate, unprivileged test venv
+with networking disabled. The production runtime venv contains no pytest.
+
+The **463-test** local preflight additionally included **31 deployment-helper
+tests** in `tests/test_deployment.py`: artifact validation, protected environment
+conversion and safe accounting backup/refusal using synthetic databases. Those
+operational additions were uncommitted during preflight and were subsequently
+recorded in existing commit `68d937ad7de2860344f89f5e64903a471d62bc37` before
+Gate B. They are not in the immutable application's 432-test suite. No previously
+completed staging suite was rerun unnecessarily during cutover.
+
+### Accounting transfer
+
+- Final local process/open-handle checks found no running bot or process with the
+  authoritative local database open. The target was inactive and masked with no
+  service-user processes. The owner confirmed all historical instances stopped.
+- Source: `~/.local/state/rolfbot/usage.sqlite3`; schema **2**, full integrity **OK**,
+  journal mode **DELETE**, timezone **Europe/Oslo**, **6 completed attempts**,
+  **2 cooldowns**, **540 input / 67 output tokens**, no provider block.
+- Source SHA-256:
+  `44d54def6dd138c98fb15f45c6fe48ea9fc43bc5cdd4283004e85d90beb78910`.
+- SQLite backup API snapshot, local owner-only directory and mode 0600:
+  `~/.local/state/rolfbot/backups/cutover-20261015T220743Z.sqlite3`.
+  Root-only VM copy:
+  `/var/backups/rolfbot/cutover-20261015T220743Z.sqlite3`.
+- Backup and initial installed-production SHA-256:
+  `3f5ff306af04ed58ebe56b2bdd80fe012ef3e6d6d2b26e7ce2ee5cae7766f9fb`.
+  Every original metadata, attempt and cooldown row matched through the full-row
+  fingerprint `6cfe3bfc21b0f97f8f88cc263f7bf30320c51dba7b7aebff9e518779fb78849c`.
+  The backup API snapshot has a different file checksum from the original, while
+  its entire logical accounting is identical. The original local file was unchanged.
+- The initial production file was installed without overwriting existing state,
+  owned by `rolfbot:rolfbot`, mode **0600**, and inspected successfully as that user.
+  The application's `open_store(provision=False)` passed under the real systemd
+  hardening and environment, with networking disabled. Its journaled write probe
+  was rolled back; all accounting rows remained identical and no sidecars remained.
+  That writable validation changed the physical checksum to
+  `fcf4e0c09d11f9a147c348561ddfb30aa23b4e1f5c80acb232315be87c76b517`, without changing
+  the logical fingerprint. No initialization, schema migration or quota/block reset occurred.
+- Production is authoritative from activation onward. Keep the recovery snapshots
+  protected; never restore them automatically over newer production accounting.
+
+### Activation and initial observations
+
+- Activation: **00:09:21 Europe/Oslo, 16 October 2026**, initial PID **112629**.
+  The service became active/running with one command sync and one Discord-ready
+  event, no automatic restarts and no generation before owner acceptance testing.
+- Ubuntu Python **3.12.3**; OpenAI **3.31.0**, HTTPX2 **2.13.1**, discord.py **2.7.1**,
+  aiohttp **3.14.5**; the same 23 pinned runtime dependencies as staging. The 54-file
+  transfer inventory, source manifest, installed modules and unit were reverified.
+- Protected config remains `root:root` 0600 inside a 0700 directory. Offline
+  validation confirmed one approved guild/channel, production SQLite path,
+  **GPT-6 Luna**, reasoning **none**, output cap **512**, personal/global daily
+  caps **20/100**, cooldown **30 seconds**. Exact source retains reservation and
+  dispatch protection and `max_retries=0`. No paid smoke test or billing change.
+- Effective hardening and limits match the reviewed unit: memory high/max
+  **192/256 MiB**, swap max **64 MiB**, CPU quota **50%**, CPU/IO weights **10**,
+  tasks **64**, descriptors **256**. Initial idle measurements: **72,712 KiB RSS**,
+  cgroup current **54,444,032 bytes**, peak **54,706,176 bytes**, **3 tasks**,
+  **7 descriptors**, **0.949 CPU seconds**, no memory-pressure/OOM events or
+  service swap. Host available memory **561 MiB**, free disk **16 GiB**.
+- Before activation: both names HTTPS **200**, verified TLS; apex **0.214 s**,
+  www **4.224 s** in individual samples. After activation: apex **0.157 s**,
+  www **0.168 s**, both HTTPS **200**. nginx and website recovery remain healthy;
+  all nine protected configuration/automation/homepage hashes match staging.
+  No new TCP/UDP listeners appeared. No unrelated infrastructure changes.
+- Startup application logs contained only recognized fixed events, with no
+  configured credential values, conversation transcripts or error events.
+- More than six minutes of observation passed with no automatic restart or
+  resource-pressure event. After three live message requests, peak RSS was
+  **80,260 KiB (78.4 MiB)** and cgroup peak **62,312,448 bytes (59.4 MiB)**,
+  with approximately **1.211 CPU seconds** consumed since startup. Both websites
+  remained HTTPS 200 (apex **0.228 s**, www **0.248 s**).
+- The owner reports successful reply continuity with memory, a fresh context for
+  a new mention, and no duplicate replies. The owner waited 30 seconds between
+  messages and therefore observed no cooldown denial; a live denial is not
+  claimed. Logs show exactly three successful generations, all accounted as
+  completed. SQLite now has **9 completed attempts**, **2 cooldowns** and cumulative
+  **840 input / 122 output tokens**; the original six attempts are unchanged.
+  All application log messages match fixed events/metrics, with no transcript,
+  configured credential value or error event.
+- Read-only accounting checks verified completed reservation/dispatch timestamps,
+  output counts within 512, personal/global usage **3/3** for 16 October, and stored
+  cooldown deadlines exactly 30 seconds after the latest reservation. The minimum
+  observed request gap was **37.745 s**. Daily quota exhaustion was not attempted;
+  enforcement is also covered by the unchanged application tests. Exactly one
+  Rolfbot process exists on the VM and it matches systemd's main PID.
+- The owner subsequently confirmed `/rolfbot` responded, a mention in another
+  chat received no response, and an ordinary unrelated message received no
+  response. This completed live acceptance. Four generation events succeeded:
+  **one slash request and three mention/reply requests**, with no duplicates or
+  delivery/error events. No additional paid smoke or post-restart AI test ran.
+
+### Boot enablement, restart and final state
+
+- After owner acceptance, `systemctl enable rolfbot.service` created the expected
+  `multi-user.target.wants` link. One `systemctl restart` began at
+  **00:21:27 Europe/Oslo**; the new process started at **00:21:28**, replacing PID
+  **112629** with **112888**. SIGTERM shutdown/cancellation events were clean;
+  the old process exited and exactly one Rolfbot process remains.
+- Discord reconnected with exactly one command-sync event and one ready event
+  for the new invocation. Across both starts there are two of each, with four
+  generation events total: no replay or duplicate request after restart.
+- Before and after restart: schema **2**, integrity **OK**, **10 completed
+  attempts**, **2 cooldowns**, **920 input / 137 output tokens**, no provider block.
+  Full accounting fingerprint, including metadata and cooldowns, was identical:
+  `d250e61f25c745b768dcc119466c4cb8d076266c8f52149842c159978ba708c1`.
+  All six historical attempt rows remain identical to the cutover snapshot;
+  both original cooldown users remain present with legitimate updated deadlines.
+  The current local day has **4 personal / 4 global requests**. No quota was reset.
+- Final service: **active/running**, **enabled**, `Result=success`,
+  `NRestarts=0`. Manual restart does not increment the automatic restart counter.
+  The installed unit still matches the reviewed definition and passes validation.
+  Restart policy remains on-failure, 20-second delay, three starts per five minutes,
+  45-second stop timeout and control-group cleanup. No reboot was performed.
+- During live checks, observed RSS reached **78.4 MiB** and cgroup peak reached
+  **59.7 MiB**. At the final post-restart sample, RSS was **72,640 KiB (70.9 MiB)**,
+  cgroup current **54,579,200 bytes (52.1 MiB)**, peak **54,845,440 bytes**,
+  CPU consumed **0.920 s**, **4 tasks**, **7 descriptors**, no service swap or
+  memory high/max/OOM events. Before restart, CPU use was about **1.27 s over ten
+  minutes**. Effective limits and hardening remain unchanged. Available host
+  memory was **563 MiB**, swap use **27 MiB**, free disk **16 GiB**.
+- Final websites: HTTPS **200**, verified TLS, apex **0.223 s**, www **0.232 s**.
+  nginx's master PID remains **16603**; website recovery service/timer are healthy.
+  All nine checked protected hashes and the active website release link are
+  unchanged. No new listeners or failed units exist. No nginx, Cloudflare, DNS,
+  TLS, UFW, SSH, website files or existing deployment automation was modified.
+- All production application journal messages since activation matched fixed
+  events and bounded generation metrics. No configured credentials, conversation
+  transcripts, unclassified application messages or errors were found. Neither
+  credential contents nor raw user/message identifiers were printed by the audits.
+- Local Rolfbot remains stopped. The unchanged local database and its private
+  snapshot are recovery evidence, not the current quota authority. Production
+  credentials and SQLite remain mode 0600 with their approved owners.
+
+**No acceptance blockers remain.** The owner did not test a live cooldown denial
+or exhaust daily quotas; configuration, persisted deadlines, observed spacing,
+accounting continuity and existing offline tests supply that evidence. Billing
+configuration/project attribution remains owner-managed and was not changed or
+independently inspected. Ongoing off-host backup retention and future load growth
+remain operational follow-up items. Only repository documentation changed during
+Gate B; no application changes, commit or push were performed.

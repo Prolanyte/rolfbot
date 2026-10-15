@@ -6,12 +6,13 @@ validation: **15 October 2026**. Phase 0 and Milestones 1–2 are complete.
 `/rolfbot` test.** Milestone 3 and the minimal Discord MVP (4a) provide the working
 baseline. Natural mentions, reply continuation and bounded ephemeral memory are
 now implemented, tested offline and reported working locally by the owner,
-including bare follow-ups, isolation and cooldowns. **Approved Gate A staging on
-Vultr is complete; Gate B is NOT approved.** Rolfbot is installed but remains
-stopped, without boot enablement and persistently masked. Credentials are staged;
-production SQLite is absent and the unchanged local database remains authoritative.
-The agent has not independently verified live AI results or project attribution;
-staging made no live Discord/OpenAI connections. See [DEPLOYMENT.md](DEPLOYMENT.md).
+including bare follow-ups, isolation and cooldowns. **Gate B was approved and
+Rolfbot activated on Vultr on 16 October 2026 at 00:09 Europe/Oslo.** Discord is
+connected and the command synchronized. Historical accounting was preserved;
+production SQLite is authoritative and the local bot must remain stopped.
+Owner-driven live AI acceptance, boot enablement and the controlled restart passed.
+The service is active/enabled and the website remains healthy.
+See [DEPLOYMENT.md](DEPLOYMENT.md).
 See the [README](../README.md) for tested setup and commands, and
 [YouTube research](YOUTUBE_RESEARCH.md) for the conditional music decision.
 
@@ -30,17 +31,17 @@ friend-group personality without adding unnecessary infrastructure or tools.
 | 4a. Minimal Discord MVP — owner reports private-guild success | One explicit /rolfbot command, opt-in smoke test and safe startup | Milestones 1–3 | Original 352-test MVP baseline retained |
 | 4a enhancement — owner reports local success | Natural mentions, reply chains and bounded ephemeral context | Working minimal MVP | 432 application tests on Python 3.12/3.13; local conversation checks reported successful |
 | 6. Release readiness — staged candidate verified | Exact SHA `9a4500aa1cc3272471b6492c6c4ec96527ebc7dd` and safe artifacts | Milestone 4a enhancement | Local provenance/tests and 432 Ubuntu application tests pass; unit and hardened offline probe pass |
-| 7. Production deployment — gate B pending | Isolated service alongside the website | Gate A staging complete; separate cutover approval required | Masked installation and credentials verified; accounting transfer and live acceptance pending |
+| 7. Production deployment — complete | Isolated service alongside the website | Gates A and B approved | Four successful owner-driven AI requests; accounting preserved; Discord, restart, boot enablement and website health verified |
 | 4b. Personality and scheduling — after deployment | Friend-group refinement and varied spontaneous messages | Stable deployed MVP | Quiet hours, cadence, novelty, restart and quota tests pass |
 | 5. Optional music — later | Decide feasibility, then implement if approved | Stable MVP; research and playback gates | Local and Vultr evidence plus acceptable terms/maintenance decision, or music disabled |
 
-**Current delivery order:** the owner has validated the small working bot and
-requested natural conversations before production. Validate that enhancement
-locally, then deploy to the existing Vultr website VM with separate authorization.
-Scheduling, personalized inside jokes and music follow production acceptance.
+**Current delivery order:** the owner validated the small working bot and its
+natural conversations, then approved deployment to the existing Vultr website VM.
+Production acceptance is complete. Scheduling, personalized inside jokes and
+music remain deferred to separately scoped work.
 The [local runbook](LOCAL_TEST.md) records tested versions and the reviewed
-release; no commit/push was authorized. Gate B approval is required before
-transferring accounting or activating the staged release.
+release; no commit/push was authorized for this cutover. Production acceptance is
+complete. Deferred feature work requires its own scope and authorization.
 
 ## 1. Runtime foundation — complete
 
@@ -388,8 +389,8 @@ music, tools, a dashboard and an HTTP server remain unimplemented.
   environment settings, SQLite schema change, paid request or external test call.
 
 **Owner now reports these local checks succeeded; approved staging is complete.**
-Next: review the results in [DEPLOYMENT.md](DEPLOYMENT.md) and separately approve
-Gate B before live cutover.
+Gate B has since been approved and production acceptance completed; the service
+is active and enabled. See [DEPLOYMENT.md](DEPLOYMENT.md).
 History increases input-token costs; retain
 the owner-managed $2 monthly spending controls. No commit or push was authorized.
 
@@ -487,11 +488,17 @@ MVP implementation or the conversation enhancement. The deployment task has sinc
 completed approved staging on Ubuntu 24.04.5: one vCPU, 955 MiB RAM, with about
 568 MiB available and 16 GiB free disk after validation. Website/recovery services
 remain healthy, and both hostnames return HTTPS 200. The exact release and protected
-credentials are installed; the service remains stopped and persistently masked.
+credentials are installed; Gate B then transferred accounting and activated the
+service on 16 October 2026 at 00:09 Europe/Oslo. Discord connection and command
+synchronization succeeded; owner live acceptance, boot enablement and a controlled
+restart passed, preserving all accounting. Final state: active/enabled, ten
+completed attempts (six historical plus four production checks), two cooldowns,
+920 input/137 output tokens and no service block. Final available RAM was about
+563 MiB; both website hostnames remain HTTPS 200.
 All 432 application tests pass on Ubuntu Python 3.12.3, and the hardened offline
 probe used about 72.4 MiB peak RSS under the proposed 256 MiB limit. No production
-database exists and no live cutover occurred. The [deployment runbook](DEPLOYMENT.md)
-records provenance, staging evidence, rollback and the pending Gate B checks.
+accounting was lost during the approved cutover. The [deployment runbook](DEPLOYMENT.md)
+records provenance, staging/cutover evidence, restart validation and rollback.
 
 - Run as a dedicated, unprivileged Linux service user with an isolated virtual
   environment and versioned release directories. Keep persistent SQLite state

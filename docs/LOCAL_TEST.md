@@ -2,13 +2,13 @@
 
 The owner reports **successful local live smoke, slash, mention and reply-chain
 tests**, including follow-ups without another mention, conversation isolation and
-the 30-second cooldown. Project attribution, second-guild rollout and production
-readiness have not been independently verified. The agent has not sent live
-OpenAI/Discord requests. Approved Gate A staging on Vultr is complete, including
-protected credential transfer and offline validation without displaying values.
-Rolfbot remains stopped and masked; no production database exists. The unchanged
-local database remains authoritative. See [DEPLOYMENT.md](DEPLOYMENT.md) for the
-staging evidence and pending Gate B approval.
+the 30-second cooldown. Project attribution remains owner-managed and a second
+guild remains disabled. Approved Gate B cutover activated
+Rolfbot on Vultr on 16 October 2026 at 00:09 Europe/Oslo. Historical accounting was
+preserved and production SQLite is now authoritative. Keep the local bot stopped
+and retain its protected cutover snapshot for recovery; do not resume using stale
+accounting. Owner production checks, boot enablement and a controlled restart
+passed. See [DEPLOYMENT.md](DEPLOYMENT.md) for the evidence and operating commands.
 
 For the existing working installation, keep its credentials and usage database;
 do not repeat provisioning or the paid smoke test just for this enhancement.
@@ -243,7 +243,9 @@ added Discord IDs/usernames. Discord retains visible messages independently.
 
 Record safe observations and project usage privately, including whether a reply
 without an extra mention worked in this guild. Do not paste private conversation
-text, credentials or raw exceptions into the repository. This task ran no live checks.
+text, credentials or raw exceptions into the repository. Initial implementation
+verification was offline; subsequent owner-driven production checks are recorded
+in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## 9. Stop cleanly
 
@@ -276,10 +278,12 @@ cleared. Restart using `run`, **not** `init-db`; quotas and blocks persist.
   project attribution, second-guild rollout and live shutdown evidence were not supplied.
 - Mention/reply enhancement: **owner-reported local success**, including bare
   reply continuation, isolation and cooldowns. Exact test timestamps were not
-  supplied. Production checks remain pending; see the deployment evidence record.
+  supplied. Later production checks succeeded on 16 October; see the deployment
+  evidence record for the owner reports and corresponding accounting/log checks.
 
 Deployment uses the exact reviewed application commit and checksummed artifacts,
 never an arbitrary dirty working tree. The existing Vultr website VM now has the
 staged release, with 432 application tests passing on Ubuntu Python 3.12.3.
-Live cutover awaits Gate B approval. Personality refinements,
+Gate B cutover is complete and production is active/enabled; owner-driven live
+acceptance and boot/restart verification passed. Personality refinements,
 spontaneous messages and optional music follow deployment; see the [roadmap](ROADMAP.md).
