@@ -1,4 +1,4 @@
-"""Offline CLI and a small asyncio lifecycle; external services stay disabled."""
+"""Offline diagnostics and explicit live commands with owned async cleanup."""
 
 import argparse
 import asyncio
@@ -7,11 +7,15 @@ import os
 import signal
 from collections.abc import Mapping, Sequence
 
-from rolfbot.config import CREDENTIAL_NAMES, ConfigurationError, load_settings
+from rolfbot.config import CREDENTIAL_NAMES, ConfigurationError, load_settings, require_discord_settings
 from rolfbot.logging_setup import configure_logging
+from rolfbot.runtime import StartupError
 
 
 class _Parser(argparse.ArgumentParser):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs, allow_abbrev=False)
+
     def error(self, message: str) -> None:
         # argparse's default error can echo arbitrary argv, including secrets.
         self.print_usage()
@@ -21,37 +25,44 @@ class _Parser(argparse.ArgumentParser):
 def _parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog="python -m rolfbot",
-        description="Rolfbot runtime foundation. All external integrations are disabled.",
+        description="Rolfbot: offline diagnostics, opt-in API smoke test and Discord slash command.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check-config", help="validate configuration offline (no credentials needed)")
-    commands.add_parser("run", help="refuse startup until Discord integration is ready")
+    commands.add_parser("init-db", help="explicitly provision persistent usage storage offline")
+    smoke = commands.add_parser("smoke-test", help="make one quota-protected, billable OpenAI attempt")
+    smoke.add_argument("--confirm-billable", action="store_true", required=True,
+                       help="explicitly authorize this single live OpenAI attempt")
+    commands.add_parser("run", help="start the configured Discord slash-command bot")
     return parser
 
 
-async def _execute(command: str) -> int:
+async def _execute(command: str, settings=None) -> int:
     logger = logging.getLogger("rolfbot")
     logger.info("event=startup command=%s", command)
     try:
         # Yield once so pending cancellation is observed before diagnostics.
-        # Future asynchronous work can live inside this same cleanup boundary.
         await asyncio.sleep(0)
         if command == "check-config":
             print(
-                "Configuration OK (offline). Discord, OpenAI, scheduling and music "
-                "are disabled. No credentials were verified with a service."
+                "Configuration OK (offline). No clients started or credentials verified "
+                "with a service. Scheduling and music are disabled."
             )
             return 0
-        logger.error(
-            "event=startup_refused Bot runtime is unavailable: implement the "
-            "Discord integration first (Milestone 4); live AI testing is pending."
-        )
-        return 3
+        from rolfbot.runtime import open_store, run_discord, smoke_test
+        assert settings is not None
+        store = await open_store(settings, provision=command == "init-db")
+        if command == "init-db":
+            print("Usage database ready (schema 2). Existing accounting and service blocks are preserved.")
+            return 0
+        if command == "smoke-test":
+            return await smoke_test(settings, store)
+        return await run_discord(settings, store)
     finally:
         logger.info("event=shutdown command=%s", command)
 
 
-async def _async_main(command: str) -> int:
+async def _async_main(command: str, settings=None) -> int:
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
     assert task is not None
@@ -66,7 +77,7 @@ async def _async_main(command: str) -> int:
     # The supported platform is Linux, and the CLI owns its main thread.
     loop.add_signal_handler(signal.SIGTERM, request_shutdown)
     try:
-        return await _execute(command)
+        return await _execute(command, settings)
     except asyncio.CancelledError:
         if not received_sigterm:
             raise
@@ -93,12 +104,20 @@ def main(
     secrets = tuple(source.get(name, "") for name in CREDENTIAL_NAMES)
     logger = configure_logging(secrets=secrets)
     try:
-        settings = load_settings(source)
+        settings = load_settings(
+            source, require_openai=arguments.command in ("run", "smoke-test"),
+            require_discord=arguments.command == "run",
+        )
+        if arguments.command == "run":
+            require_discord_settings(settings)
         logger.setLevel(settings.log_level)
-        return asyncio.run(_async_main(arguments.command))
+        return asyncio.run(_async_main(arguments.command, settings))
     except ConfigurationError as error:
         logger.error("event=configuration_error %s", error)
         return 2
+    except StartupError as error:
+        logger.error("event=startup_refused %s", error)
+        return 3
     except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("event=cancelled signal=SIGINT_or_task_cancel")
         return 130

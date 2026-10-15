@@ -4,8 +4,9 @@ Planning baseline/Milestones 1–2: **14 October 2026**. Milestone 3 offline
 validation: **15 October 2026**. Phase 0 and Milestones 1–2 are complete.
 **Milestone 3 is implementation complete, pending authorized live smoke testing.**
 The package includes a bounded OpenAI service protected by SQLite accounting.
-Milestones 4–7 remain future work; the live bot is disabled and no real API call
-has been made.
+The **minimal Discord MVP (4a) is implemented offline**, with an explicitly opt-in
+smoke test and `/rolfbot` command. Live validation remains pending. No real API
+call, Discord connection or deployment was performed during implementation.
 See the [README](../README.md) for tested setup and commands, and
 [YouTube research](YOUTUBE_RESEARCH.md) for the conditional music decision.
 
@@ -21,10 +22,18 @@ friend-group personality without adding unnecessary infrastructure or tools.
 | 1. Runtime foundation — complete | Make future development reproducible and testable | Phase 0 | Validated configuration, parseable modules, offline tests and documented dependencies |
 | 2. Usage protection — complete | Enforce persistent quotas before paid access | Milestone 1 | Atomic reservation, lifecycle, restart, calendar and concurrency tests pass on Python 3.12/3.13 |
 | 3. OpenAI — implementation complete, pending authorized live smoke testing | Deliver bounded asynchronous AI requests | Milestones 1–2; owner-managed billing configured | 258 offline tests pass on Python 3.12/3.13; live provider access/attribution remains unverified |
-| 4. Discord and scheduling | Restore commands and periodic messages safely | Milestones 1–3 | Slash commands, two-server isolation and reconnect/scheduling tests pass |
-| 5. Optional music | Decide feasibility, then implement if approved | Milestone 4; research and playback gates | Local and Vultr evidence plus acceptable terms/maintenance decision, or music disabled |
-| 6. Release readiness | Establish a releasable, tested build | Milestones 1–4; 5 if music enabled | Test matrix, configuration and operational review complete |
-| 7. Production deployment | Deploy independently of the existing website | Milestone 6 and separate deployment authorization | Service, restart, resource limits and rollback verified |
+| 4a. Minimal Discord MVP — implemented offline | One explicit /rolfbot command, opt-in smoke test and safe startup | Milestones 1–3 | Offline suite passes; owner verifies live OpenAI attribution and one-guild Discord delivery |
+| 6. Minimal release readiness — next after local validation | Record the exact reviewed release SHA and local evidence | Milestone 4a; owner authorization to commit | Tests, configuration and operations review complete for the minimal feature set |
+| 7. Production deployment — separately authorized | Deploy the minimal MVP independently of the website | Local live acceptance and minimal release readiness | Service, restart, resource limits and rollback verified; website unaffected |
+| 4b. Personality and scheduling — after deployment | Friend-group refinement and varied spontaneous messages | Stable deployed MVP | Quiet hours, cadence, novelty, restart and quota tests pass |
+| 5. Optional music — later | Decide feasibility, then implement if approved | Stable MVP; research and playback gates | Local and Vultr evidence plus acceptable terms/maintenance decision, or music disabled |
+
+**Delivery order changed by the owner on 15 October 2026:** first validate the
+smallest working OpenAI/Discord bot locally, then deploy it to the existing Vultr
+website VM with separate authorization, then add features. Scheduling, personalized
+inside jokes and music are not prerequisites for the initial deployment. This task
+does not deploy. The [local runbook](LOCAL_TEST.md) records tested versions, the
+base commit and the pending intended-deployment SHA; no commit/push was authorized.
 
 ## 1. Runtime foundation — complete
 
@@ -48,14 +57,14 @@ Delivered components:
   `.env` loading. The owner can supply process variables directly now and via
   a protected systemd environment file at the later deployment milestone.
 - Safe configuration errors and credential-free offline validation. Credential
-  requirements are opt-in parameters to the settings loader for future callers;
+  requirements are opt-in parameters to the settings loader for live callers;
   they validate values without enabling integrations. Placeholder/empty or
   whitespace-containing required credentials fail without echoing their values.
 - Consistent stderr logs for journald, redaction of configured credential values,
   and omission of exception/stack details even at DEBUG. No prompt content is logged.
-- `check-config` validates settings and exits offline. With valid configuration,
-  `run` refuses with exit code 3 until Milestone 4 is ready. SIGINT/SIGTERM cancel async
-  work, run cleanup and restore handlers; no continuous service is started.
+- `check-config` validates settings and exits offline. At Milestone 1, `run`
+  refused startup; Milestone 4a now starts only the validated minimal bot.
+  SIGINT/SIGTERM cancel async work, run cleanup and restore handlers.
 - An offline pytest harness that clears service settings, blocks network access
   and guards subprocess imports. `monkeypatch`, ordinary callables and `tmp_path`
   support later fake clients, clocks and temporary databases without implementing
@@ -65,18 +74,18 @@ Delivered components:
 | --- | --- |
 | `ROLFBOT_LOG_LEVEL` | Implemented; default INFO, validated standard level names |
 | `ROLFBOT_TIMEZONE` | Implemented; default Europe/Oslo, validated against installed IANA data |
-| `OPENAI_API_KEY`, `DISCORD_BOT_TOKEN` | Hidden from representations; optional offline; OpenAI key required only for explicit client construction |
+| `OPENAI_API_KEY`, `DISCORD_BOT_TOKEN` | Hidden from representations; optional offline; smoke-test requires OpenAI, run requires both |
 | `OPENAI_MODEL` | Implemented; default and sole approved model gpt-6-luna; no fallback |
 | `OPENAI_REASONING_EFFORT` | Implemented; default and sole approved effort none |
-| `ROLFBOT_GUILD_CHANNELS` | Future-only, ignored now; private two-guild channel mapping |
+| `ROLFBOT_GUILD_CHANNELS` | Implemented in 4a; private JSON guild-ID strings to nonempty channel-ID lists; required for run |
 | `ROLFBOT_DATABASE_PATH` | Implemented in Milestone 2; optional offline, explicit absolute file path required for usage storage; production state outside release directories |
 
 **Acceptance evidence:** 47 offline tests passed on each tested Python version.
 All source/tests compile. Editable installation (3.13) and regular wheel
 installation (3.12) succeeded in isolated environments; both passed `pip check`.
 CLI help/configuration checks and failed startup were exercised from outside the
-checkout. Import tripwires observed no network calls, no SDKs are runtime
-requirements, and credential/error redaction and signal cleanup were tested.
+checkout. Import tripwires observed no network calls; no SDK was a runtime
+requirement at Milestone 1. Credential/error redaction and signal cleanup were tested.
 
 **Milestone 1 is ready to close; no acceptance gaps remain.** This does not claim
 production VM compatibility, working external integrations or service-level
@@ -87,8 +96,8 @@ paid API call, Discord connection or billing change was performed.
 
 **Objective achieved:** an offline accounting component enforces persistent limits
 across independent connections, guild contexts and restarts. Every future AI entry
-point must use this component; Milestone 3 now integrates it into AIService while
-the CLI and all Discord functionality remain disabled.
+point must use this component. Milestone 3 integrated it into AIService;
+Milestone 4a's CLI smoke test and Discord adapter use that same service.
 
 `usage.py` defines limits, validation and typed results. `usage_store.py` provides
 async reservation, dispatch, completion, refund and read-only status operations.
@@ -170,7 +179,7 @@ dispatch operations, and the parent verifies retained usage and cooldowns.
 Tests cover lock and commit failures, transactional rollback, idempotent lifecycle
 operations, lost acknowledgements, cancelled workers, corrupt/inaccessible storage
 and schema failures. Imports open no database or network connection, diagnostics
-remain sanitized, `run` stays disabled, both source/test compilations pass and
+remain sanitized, `run` was still disabled at Milestone 2, both source/test compilations pass and
 `git diff --check` is clean.
 
 **Milestone 2 provided the accounting foundation for Milestone 3.** Its storage
@@ -213,8 +222,8 @@ Implemented components:
   send. Available counts can remain unknown if persistence fails.
 - Completed text is limited to 1,800 UTF-16 units and checked for empty/malformed,
   incomplete, refused, oversized or unsafe-control output. Failure produces safe
-  categories without automatic continuation. Discord sending/mention controls
-  remain Milestone 4 work.
+  categories without automatic continuation. Milestone 4a now supplies the
+  Discord sending/mention controls around this unchanged AI contract.
 - Transient failures apply monotonic 30/60/120/240/300-second cooldowns, capped at
   300 s, with no automatic retry. Billing limits, exhausted credit, credentials,
   permissions and request-configuration failures latch the service disabled.
@@ -254,14 +263,14 @@ slots, cancellations at each lifecycle boundary, timeouts, provider errors,
 persistent blocks, backoff, output/Unicode limits, usage metadata and privacy.
 Actual file-backed v1 fixtures verify preservation, transactional rollback and
 repeat migration. Imports remain database/network/client-free, `check-config`
-works without credentials, and `run` refuses startup. Both compilations, locked
+works without credentials, and `run` refused startup at this milestone. Both compilations, locked
 dependency installations, `pip check` and `git diff --check` pass.
 
 **Offline Milestone 3 acceptance is satisfied.** Live API/project attribution,
 model availability and response quality are unverified. No real credentials,
 provider call, Discord connection, scheduler, music, VM access or billing change
-was used. The implementation is ready for Milestone 4 integration work, with a
-separate authorized live smoke test still required for end-to-end acceptance.
+was used. Milestone 4a now supplies the integration and smoke-test command; the
+owner must perform the opt-in live checks before end-to-end acceptance.
 
 ### Owner-managed billing prerequisite
 
@@ -294,39 +303,69 @@ message content, and review spending at the $1 warning.
 project attribution, model access, useful replies and usage reporting. Do not
 spend through the cap to test enforcement; simulate those errors locally.
 
-## 4. Modern Discord commands and scheduling
+## 4a. Minimal Discord MVP — implemented, pending local live validation
 
-**Objective:** reliable interaction in both servers from one process.
+- Pinned **discord.py 2.7.1**, with aiohttp **3.14.5**, on Python 3.12/3.13.
+- One guild-scoped `/rolfbot message:<text>` command. A private
+  `ROLFBOT_GUILD_CHANNELS` JSON mapping enables one test guild or both guilds
+  without source edits. DMs, bots, unlisted/mismatched guilds/channels and
+  non-text channels are denied before admission.
+- Authenticated interaction user/guild IDs and interaction ID feed the unchanged
+  `AIService`/SQLite barrier. No alternate transport or quota implementation.
+- Only the guilds intent; no ordinary-message subscriptions, message cache,
+  member/presence/content intents or Administrator requirement.
+- Defer before storage/API work, with a 2-second deadline. Failed/ambiguous defer
+  cannot generate. Edit the deferred response once within 10 seconds, suppressing
+  all mentions. AI output remains bounded to 1,800 UTF-16 units. Failed delivery
+  never refunds or regenerates; friendly errors contain no provider details.
+- Synchronize once per configured guild in `setup_hook` (30-second deadline per
+  guild); never in `on_ready` or reconnect callbacks. Own and cancel active
+  interaction tasks, then close OpenAI and Discord resources on shutdown.
+- `init-db` explicitly provisions schema 2 offline. `run` and `smoke-test` require
+  existing writable, intact, compatible external storage and refuse service
+  blocks; no auto-create, migration, quota reset or block clearing.
+- `smoke-test --confirm-billable` uses a fixed prompt, synthetic user ID `1`,
+  unique attempt ID and normal quotas. It prints safe outcome/text/token counts
+  and closes the client. The agent must not run it live; the owner opts in.
 
-- Select the current supported `discord.py` release at implementation time;
-  record the tested version. Use application/slash commands for AI and, if
-  enabled later, music. Define synchronization during startup without repeating
-  registration on every reconnect.
-- Use minimal gateway intents: start with guild information, adding voice-state
-  events only for music. Avoid member, presence and message-content intents
-  unless a concrete feature requires them. Document channel permissions and
-  command scopes; do not request Administrator permission.
-- Configure and validate guild/channel mappings privately. Apply access checks
-  before voice connection or API reservation. Initially reject DMs and unknown
-  guilds; allow the owner to change that policy deliberately later.
-- Give helpful responses for invalid input, missing permissions, quota denial
-  and outages. Bound Discord message length and suppress unintended mentions
-  in generated text. Do not expose internal exception strings.
-- Support reconnection, cancellation and graceful shutdown. Retain references
-  to tasks; start the scheduler once through a controlled lifecycle hook, wait
-  for readiness, and prevent duplicate tasks after reconnects.
-- Preserve the random 2–7-day interval. Proposed policy: persist a next-due UTC
-  timestamp per configured channel, claim jobs atomically, and do not send a
-  burst of missed messages after downtime. Record a new due time after an attempt;
-  use bounded deferral for temporary outages and quota exhaustion.
-- Handle missing/deleted channels and send failures without killing the entire
-  scheduler. Resolve ambiguous sends conservatively: avoid automatic duplicate
-  generations/posts. Catch per-job errors while preserving task cancellation.
+**Offline acceptance: 352 tests pass on each of Python 3.12.15 and 3.13.16.**
+Real command registration/dispatch runs over mocked Discord
+interactions and OpenAI HTTP, with committed SQLite authorization for every
+simulated API send. Tests cover both guilds, duplicates, quotas, storage and
+ambiguous dispatch, defer/delivery errors, Unicode/mentions, reconnection,
+shutdown/cancellation and credential-free imports. Full results and the pending
+release SHA are recorded in [LOCAL_TEST.md](LOCAL_TEST.md).
 
-**Acceptance:** mocked commands exercise both guilds, permissions and denials;
-repeated ready/reconnect events leave exactly one scheduler. Simulated time,
-restart and failure tests preserve due times and global quota accounting.
-Later controlled Discord testing verifies real registration and delivery.
+**Live acceptance pending:** owner executes the runbook, verifies OpenAI project
+usage and a few slash commands in one test guild, then validates the second
+guild. No live result or deployment is claimed. No periodic messages, extra
+commands, music, history, tools, dashboard or HTTP server are implemented.
+
+## 4b. Personalized personality and varied spontaneous messages — deferred
+
+Develop this only after the minimal MVP is locally validated and deployed.
+
+- Refine the friendly Rolfbot persona with owner-provided friend-group details,
+  humor and inside jokes. Keep private details out of public examples; no
+  accumulated conversation history or automatic channel ingestion is implied.
+- Vary spontaneous content among **Million Dollars, But...**, **Would You
+  Rather...**, strange/interesting facts, food-related remarks, jokes, absurd
+  observations, conversation starters and occasional other suitable subjects.
+  Avoid repetitive content and previously generated questions where practical;
+  design a bounded novelty record rather than unbounded message history.
+- Keep approximately **2–7 days** between spontaneous messages per configured
+  channel, and **no catch-up bursts after downtime**. Persist and atomically
+  claim next-due UTC timestamps; all generated messages use global API quota.
+- Post only **08:00 inclusive to 00:00 exclusive in Europe/Oslo**. If a due time
+  is outside that window, reschedule to a **randomized permitted time**, not
+  exactly 08:00. Persist the adjusted time and test Oslo DST transitions.
+- Own one scheduler through a controlled lifecycle; reconnects must not create
+  duplicate tasks. Handle missing channels, quotas and temporary outages with
+  bounded deferral. Ambiguous delivery must not regenerate or duplicate posts.
+
+**Future acceptance:** deterministic clock/randomness tests for permitted hours,
+2–7-day cadence, novelty, restart/downtime and global allowance, plus controlled
+live delivery checks. These requirements are documentation only in the MVP.
 
 ## 5. Conditional music restoration
 
@@ -360,7 +399,9 @@ Alternatively, explicitly release with music disabled and an agreed fallback.
 ## 6. Tests and release readiness
 
 Develop tests alongside each milestone, then run this release gate before any
-production deployment. Mock paid/network services and inject time rather than
+production deployment, limited to features actually enabled in that release.
+Scheduling and voice rows are later feature gates, not blockers for the minimal
+MVP deployment. Mock paid/network services and inject time rather than
 waiting days or hitting real rate limits.
 
 | Area | Required evidence |
@@ -380,14 +421,15 @@ waiting days or hitting real rate limits.
 
 **Acceptance:** automated checks pass from a clean environment; known defects are
 resolved or disabled explicitly; manual tests record dates, versions and outcomes.
-The README is then extended with an actually tested live-bot installation
-procedure; Milestone 1 only verifies the offline foundation's installation.
+Record owner live results in the local runbook and the exact reviewed clean
+commit SHA before deployment; never label an uncommitted workspace as a release.
 
 ## 7. Separate production deployment milestone
 
 **Target:** the existing Ubuntu 24.04 Vultr VM serving `nilsherman.no` through
-nginx as a static site. No production access or changes were made in Phase 0 or
-Milestones 1–3.
+nginx as a static site. This follows minimal local OpenAI/Discord acceptance and
+precedes additional feature development. No production access or changes were
+made in Phase 0, Milestones 1–3, or the minimal MVP implementation.
 
 - Run as a dedicated, unprivileged Linux service user with an isolated virtual
   environment and versioned release directories. Keep persistent SQLite state
@@ -423,11 +465,12 @@ separate feasibility gate passed.
 | Decision | When needed | Proposed starting point |
 | --- | --- | --- |
 | Which channels receive AI, music and scheduled messages? | Configuration/Discord work | Private per-guild mapping; no public numeric IDs |
-| Periodic cadence and downtime policy | Scheduling work | Independent 2–7-day schedule per configured channel; no catch-up burst |
+| Periodic cadence and downtime policy | Later scheduling work | Approximately 2–7 days; 08:00–00:00 Europe/Oslo only, randomized allowed-time deferral; no catch-up burst |
 | Maintain billing safeguards and authorize any live test | Before paid calls | Owner reports Rolfbot project, $2 enforced limit, $1 alert and $5 prepaid without auto-recharge; not agent-verified |
 | YouTube rights, maintenance burden and optional provider/account use | Before music investigation beyond public samples | No authenticated cookies; keep music optional |
 | Fallback if YouTube fails on Vultr | Before enabling music | Rights-cleared local/approved audio or link sharing |
 | VM resource ceilings and maintenance window | Deployment planning | Measure available headroom; protect the existing website |
 
 No project, key, card, provider service, Discord setting or deployment resource
-has been created or configured by the agent during Phase 0 or Milestones 1–3.
+has been created or configured by the agent during Phase 0, Milestones 1–3, or
+the minimal MVP implementation.

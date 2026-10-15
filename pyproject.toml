@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rolfbot"
 version = "0.1.0"
-description = "An offline runtime foundation for a small Discord friend-group bot"
+description = "A bounded, quota-protected Discord friend-group bot"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
-dependencies = ["openai==3.31.0", "httpx2==2.13.1"]
+dependencies = ["openai==3.31.0", "httpx2==2.13.1", "discord.py==2.7.1"]
 
 [project.optional-dependencies]
 dev = ["pytest==9.1.1"]
@@ -19,4 +19,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-config --strict-markers"
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # discord.py imports audio helpers even with voice disabled. Python 3.12
+    # still ships audioop; the SDK uses audioop-lts on Python 3.13 instead.
+    "ignore:'audioop' is deprecated and slated for removal in Python 3[.]13:DeprecationWarning:discord[.]player$",
+]

@@ -96,6 +96,25 @@ class UsageStore:
         """
         return await asyncio.to_thread(self._initialize)
 
+    async def validate(self) -> Result:
+        """Startup check of existing writable storage; never create or migrate.
+
+        Check integrity, schema, timezone and any persistent service block while
+        holding a short write lock. A missing file remains missing.
+        """
+        def validate(connection: sqlite3.Connection) -> Result:
+            if connection.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+                raise sqlite3.DatabaseError("Integrity failure")
+            # BEGIN IMMEDIATE alone can succeed on a read-only file. Force a
+            # journaled page write, then roll it back, to check both file and
+            # directory writability without changing metadata or accounting.
+            connection.execute("SAVEPOINT startup_probe")
+            connection.execute("UPDATE metadata SET timezone = timezone WHERE singleton = 1")
+            connection.execute("ROLLBACK TO startup_probe")
+            connection.execute("RELEASE startup_probe")
+            return Result(Code.OK, block_reason=self._block(connection))
+        return await asyncio.to_thread(self._transaction, validate)
+
     async def migrate(self) -> Result:
         """Explicit, transactional v1 -> v2 migration of existing storage only.
 

@@ -101,11 +101,28 @@ def test_required_credentials_reject_whitespace_without_echo(value):
     assert value not in str(caught.value)
 
 
-def test_future_settings_do_not_enable_or_configure_integrations():
+def test_guild_mapping_is_private_immutable_and_supports_two_guilds():
     settings = load_settings({
-        "ROLFBOT_GUILD_CHANNELS": "not a mapping",
+        "ROLFBOT_GUILD_CHANNELS": '{"123456789":["234567890"],"345678901":["456789012","567890123"]}',
     })
-    assert settings == load_settings({})
+    assert len(settings.guild_channels) == 2
+    assert settings.guild_channels[0].channel_ids == frozenset({"234567890"})
+    assert "123456789" not in repr(settings)
+    assert "234567890" not in repr(settings.guild_channels)
+    assert load_settings({}).guild_channels == ()
+
+
+@pytest.mark.parametrize("value", [
+    "not a mapping", "", "{}", "[]", "null", '{"1":[]}', '{"01":["2"]}',
+    '{"1":"2"}', '{"1":[2]}', '{"1":[true]}', '{"1":["0"]}',
+    '{"1":["2","2"]}', '{"1":["2"],"1":["3"]}',
+    '{"1":["2"],"3":["2"]}', '{"1":["18446744073709551616"]}',
+    '{"1":["private-value"]}',
+])
+def test_invalid_guild_mapping_fails_safely(value):
+    with pytest.raises(ConfigurationError, match="ROLFBOT_GUILD_CHANNELS") as caught:
+        load_settings({"ROLFBOT_GUILD_CHANNELS": value})
+    assert "private-value" not in str(caught.value)
 
 
 @pytest.mark.parametrize("name,value", [

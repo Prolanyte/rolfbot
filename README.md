@@ -4,11 +4,13 @@ Rolfbot is a small Python Discord bot project for a friend group across two
 servers, with roughly 10–12 people in the larger server. Its intended personality
 is friendly, playful and useful.
 
-**Milestone 3 is implementation complete, pending authorized live smoke testing.**
-The OpenAI integration is tested offline through the real SDK and mocked HTTP,
-with persistent SQLite admission for every request. The live bot remains disabled:
-Discord, the periodic scheduler and music are future work. No real API request
-has been made, and supplying credentials does not start the bot.
+**The minimal Discord MVP and opt-in OpenAI smoke-test command are implemented;
+live validation is pending.** `/rolfbot message:<text>` uses the existing OpenAI
+service and persistent SQLite admission. `run` now starts Discord when explicitly
+invoked with valid credentials, guild/channel configuration and existing storage.
+No live API/Discord test or deployment was performed during implementation.
+Scheduling and music remain inactive. Follow the [local test runbook](docs/LOCAL_TEST.md)
+to review and perform the owner-controlled live checks.
 
 ## Architecture
 
@@ -20,7 +22,9 @@ has been made, and supplying credentials does not start the bot.
 ├── src/rolfbot/
 │   ├── __init__.py         # Side-effect-free package
 │   ├── __main__.py         # python -m rolfbot
-│   ├── cli.py              # Offline commands, exit codes and asyncio lifecycle
+│   ├── cli.py              # Explicit commands, exit codes and asyncio lifecycle
+│   ├── runtime.py          # Storage checks, opt-in smoke test and client ownership
+│   ├── discord_bot.py      # Allowlisted /rolfbot command and Discord lifecycle
 │   ├── config.py           # Typed settings and conditional credential validation
 │   ├── logging_setup.py    # Consistent, redacted stderr logging
 │   ├── usage.py            # Limits, input validation and structured results
@@ -30,6 +34,7 @@ has been made, and supplying credentials does not start the bot.
 ├── tests/                  # Offline pytest suite
 └── docs/
     ├── ROADMAP.md
+    ├── LOCAL_TEST.md
     └── YOUTUBE_RESEARCH.md
 ```
 
@@ -46,17 +51,22 @@ The foundation was tested locally on Linux x86_64 with **3.12.15 and 3.13.16**;
 this is not a claim of VM/deployment validation. Other Python minor versions are
 outside the declared range until tested.
 
-Direct runtime dependencies are **openai 3.31.0** and **httpx2 2.13.1**. The SDK
+Direct runtime dependencies are **openai 3.31.0**, **httpx2 2.13.1** and
+**discord.py 2.7.1**. The OpenAI SDK
 uses HTTPX2; it is also declared directly because the application configures its
 timeouts, transport and connection limits. SQLite remains standard-library only.
 Timezone validation uses OS IANA data. Development uses pytest **9.1.1** and the
 build backend is setuptools **84.0.0**. The full runtime/build/test dependency
 closure is pinned in [requirements-dev.lock](requirements-dev.lock), including
-pydantic 2.14.1 and anyio 4.15.1.
+pydantic 2.14.1, anyio 4.15.1 and aiohttp 3.14.5. Discord's dependency
+`audioop-lts 0.2.2` is installed only on Python 3.13; Python 3.12 supplies audioop.
+Tests narrowly ignore the SDK's Python 3.12 audioop deprecation warning; all
+other warnings remain errors. No voice feature is enabled.
 [Official SDK release](https://github.com/openai/openai-python/releases/tag/v3.31.0),
-[Python SDK reference](https://developers.openai.com/api/reference/python).
+[Python SDK reference](https://developers.openai.com/api/reference/python),
+[discord.py release](https://github.com/Rapptz/discord.py/releases/tag/v2.7.1).
 
-No dotenv loader, Discord SDK, music dependency or application telemetry is included.
+No dotenv loader, music playback dependencies or application telemetry is included.
 
 ## Developer setup
 
@@ -98,42 +108,60 @@ python -m compileall -q src tests
 
 `check-config` validates local settings and exits. It needs no credentials,
 creates no database and performs no network checks. It does not authenticate
-credentials or validate future channel settings. Model/effort allowlists are
-validated locally. `python -m rolfbot run`
-always refuses startup with an explanation; there is no daemon mode yet.
+credentials or open storage. Model/effort allowlists and any supplied channel
+mapping are validated locally. The explicit additional commands are:
+
+| Command | Behavior |
+| --- | --- |
+| `python -m rolfbot init-db` | Offline first-time provisioning, or validation of existing schema 2; requires an external persistent path and existing parent directory |
+| `python -m rolfbot smoke-test --confirm-billable` | One fixed-prompt, quota-protected OpenAI attempt; requires a key and existing usable database; never runs automatically |
+| `python -m rolfbot run` | Start the minimal Discord bot after validating credentials, mappings and existing storage |
+
+The smoke flag must be spelled in full. The smoke test uses synthetic user ID
+`1`, a fresh `smoke-<UUID>` attempt ID, and normal personal/global quotas and
+cooldown. It prints JSON containing a safe outcome, denial/accounting codes,
+validated response text and reported token counts (`null` means unknown).
+There are no model retries, fallbacks or continuation calls. The command can
+make zero API calls if admission denies it. Only the owner should run the live
+steps in the [runbook](docs/LOCAL_TEST.md).
 
 | Exit code | Meaning |
 | --- | --- |
-| 0 | Help or successful offline configuration check |
+| 0 | Successful command or help |
 | 1 | Unexpected internal failure; sensitive details omitted |
 | 2 | Invalid arguments or configuration |
-| 3 | Bot runtime intentionally unavailable |
+| 3 | Storage/service-block startup refusal, or Discord connection/setup failure |
+| 4 | Smoke test denied/failed, or completion accounting not confirmed |
 | 130 | SIGINT or task cancellation |
 | 143 | SIGTERM cancellation |
 
 The CLI owns an asyncio loop, handles SIGTERM cancellation, allows SIGINT to
 cancel work, restores signal handlers and logs shutdown in a `finally` block.
 It is a main-thread Linux entry point and does not rely on terminal interaction.
-Later long-running components must put their own resource cleanup inside this
-lifecycle; no such components are started now.
+The Discord lifecycle owns one AI service. Shutdown stops admission, cancels
+interaction work, and closes OpenAI and Discord resources.
 
 The offline suite covers configuration, credential/log redaction, imports, CLI
-behavior, refused startup and SIGINT/SIGTERM cleanup, plus real file-backed
+behavior, invalid-startup refusal and SIGINT/SIGTERM cleanup, plus real file-backed
 SQLite tests for quota boundaries, cooldowns, refunds, restart/crash recovery,
 independent-connection races, lock/commit failures, corruption and cancellation.
 Injected timestamps cover Oslo midnight, month/year changes, both DST transitions
 and backward clock changes. Tests use temporary databases, clear service
 configuration, block socket connections/DNS, and guard subprocess network access.
 Plugin autoload is disabled by the command above. No paid or live service tests
-are included. Run only the usage tests with `python -m pytest -q tests/test_usage*.py`.
+are run by pytest. Run only the usage tests with `python -m pytest -q tests/test_usage*.py`.
 Milestone 2's 142-test baseline is retained, with assertions updated for the new
 dependency/configuration contract. Milestone 3 adds real-SDK mocked-HTTP tests,
 usage migration, provider errors, backoff, cancellation and output/privacy checks.
 All simulated sends assert a fresh committed SQLite dispatch, and test network
 tripwires remain active. No SDK test has a separate unaccounted generation path.
-**258 tests pass on each of CPython 3.12.15 and 3.13.16**; compilation, dependency
-installation/`pip check` and `git diff --check` also pass. This validates the
-offline implementation, not provider access, billing attribution or response quality.
+**352 tests pass on each of Python 3.12.15 and 3.13.16.** The MVP adds real
+Discord command-tree invocation with mocked interactions,
+opt-in smoke tests through mocked HTTP, startup/storage failure tests, mention
+suppression, defer/delivery deadlines and owned shutdown. See the
+[verification record](docs/LOCAL_TEST.md#verification-and-release-record) for
+the final test counts, dependency versions and release SHA status. Offline
+evidence does not establish provider access, billing attribution or Discord delivery.
 
 ## Configuration
 
@@ -152,19 +180,26 @@ ROLFBOT_LOG_LEVEL=DEBUG ROLFBOT_TIMEZONE=UTC python -m rolfbot check-config
 | `ROLFBOT_DATABASE_PATH` | Unset offline; explicit absolute file path required to construct usage storage. Syntax validation only; no file access during configuration checks |
 | `OPENAI_MODEL` | `gpt-6-luna`; the only approved model |
 | `OPENAI_REASONING_EFFORT` | `none`; the only approved effort |
-| `OPENAI_API_KEY` | Optional offline; required and revalidated when explicitly constructing `AIService` |
-| `DISCORD_BOT_TOKEN` | Optional, unused; captured for redaction and later conditional validation |
+| `OPENAI_API_KEY` | Optional offline; required for `smoke-test` and `run`, revalidated when constructing `AIService` |
+| `DISCORD_BOT_TOKEN` | Optional offline and for smoke testing; required for `run` |
+| `ROLFBOT_GUILD_CHANNELS` | Optional offline and for smoke testing; required for `run`; JSON object mapping guild ID strings to nonempty lists of channel ID strings |
 
 Missing credentials and example placeholders are safe for offline use. The
 configuration loader has explicit `require_openai`/`require_discord` validation
 parameters for integration components: required credentials must be nonempty,
 contain no whitespace and not be obvious placeholders. These parameters do not
-create or enable clients, and no CLI command requests them today. Credential
+create or enable clients. `run` requires both credentials; `smoke-test` only the
+OpenAI key. Credential
 format checks do not establish remote validity. Errors name the setting without
 printing its value; settings representations omit credentials and the database path.
 
-`ROLFBOT_GUILD_CHANNELS` remains future-only and ignored. Unapproved model/effort
-values fail safely, including during `check-config`. No configuration can increase
+For example, a synthetic one-guild mapping is `{"111111111111111111":["222222222222222222"]}`.
+Add a second entry to enable the second guild; no source changes are required.
+IDs must be canonical positive 64-bit decimal strings. Duplicate guild/channel
+entries, empty mappings and non-string IDs fail safely. Real IDs belong only in
+private configuration and are omitted from settings representations.
+
+Unapproved model/effort values fail safely, including during `check-config`. No configuration can increase
 the output cap, enable retries or bypass quotas. Client construction rejects
 `OPENAI_CUSTOM_HEADERS` and `OPENAI_LOG`; SDK/transport raw logging is suppressed.
 Explicit client settings fix the official API endpoint and key, omit ambient
@@ -197,7 +232,7 @@ rotate exposed credentials; `.gitignore` is not secret storage.
 **The OpenAI integration sets `max_output_tokens=512` and disables SDK retries.**
 SQLite enforces request allowances; it does not enforce a dollar cap.
 New retries must reserve their own capacity. User-provided time/identity must
-never be trusted: future handlers supply trusted server time and Discord IDs,
+never be trusted: the Discord handler supplies trusted server time and Discord IDs,
 and check guild/channel access before reservation.
 
 `UsageStore` exposes async methods. Each call opens and closes its own connection
@@ -211,6 +246,7 @@ committed; a cancelled or lost result gives no permission to dispatch or replay.
 | --- | --- |
 | `validate_input(text)` | Pure validation; runs before any storage operation in user reservation |
 | `await store.initialize()` | Explicit provisioning of a new version-2 file, or validation of an existing version-2 schema |
+| `await store.validate()` | Check existing writable storage, integrity, schema, timezone and block state; never create or migrate |
 | `await store.migrate()` | Explicit, repeat-safe version-1 to version-2 migration of existing storage |
 | `await store.reserve_user(user_id, attempt_id, text, now=..., guild_id=...)` | Atomically reserve both allowances and establish cooldown; only `Code.RESERVED` can proceed |
 | `await store.reserve_scheduled(attempt_id, now=...)` | Reserve global capacity only; caller skips/defers denied jobs |
@@ -267,15 +303,60 @@ including refunded tombstones, to prevent replay; no retention cleanup is
 implemented. All storage/lock/schema failures return `STORAGE_UNAVAILABLE` and
 deny access. A lost acknowledgement may retain capacity conservatively.
 
+## Minimal Discord behavior
+
+Only `/rolfbot message:<text>` is registered, as a guild command in each
+configured guild. Runtime checks also reject DMs, bots, unconfigured guilds or
+channels, and mismatched guild/channel pairs before usage admission. This MVP
+supports ordinary guild text channels; threads and other channel types are
+rejected. It uses the authenticated interaction user/guild IDs and the interaction
+ID as the unique usage attempt ID. User allowances are shared across guilds.
+
+The bot requests only the nonprivileged `guilds` intent. It does not subscribe to
+message, member, presence or voice-state events, and has no ordinary-message
+handler or message cache. Use the existing bot account with `bot` and
+`applications.commands` scopes, View Channel and Send Messages in AI channels,
+and permission for users to invoke application commands. Administrator and
+privileged gateway intents are unnecessary.
+
+Allowed interactions are deferred immediately with a two-second local timeout,
+before database or OpenAI work. Failed, timed-out, already-answered or expired
+interactions cannot start generation. Discord requires initial acknowledgement
+within three seconds; the 30-second AI deadline fits inside its later response
+window. [Discord interaction deadlines](https://docs.discord.com/developers/interactions/receiving-and-responding).
+
+The handler edits the deferred response once, with a ten-second delivery
+deadline. Answers and post-defer errors are visible in the configured channel;
+access denials before deferral are ephemeral. All sends/edits use
+`AllowedMentions.none()` for everyone, roles, users and reply mentions. Generated
+text stays within 1,800 UTF-16 units, below Discord's 2,000-character limit, and
+is never split into repeated requests. Delivery failure/cancellation does not
+refund, replay or regenerate. Discord's own bounded HTTP retries can repeat an
+edit of the same response; they never cause another OpenAI generation.
+
+`setup_hook` synchronizes the command tree once per configured guild per client
+startup, with a 30-second deadline per guild. Ready/reconnect events only log
+readiness. Guild synchronization replaces this application's guild command set
+with `/rolfbot`; review existing application commands first. No global command
+sync is performed. Removing a guild from configuration immediately denies its
+use after restart; an old command may remain visible there until the owner removes
+it from Discord. [discord.py lifecycle](https://discordpy.readthedocs.io/en/stable/api.html#discord.Client.setup_hook),
+[command synchronization](https://discordpy.readthedocs.io/en/stable/interactions/api.html#discord.app_commands.CommandTree.sync).
+
+Run one bot process sharing one persistent database. Construction/startup,
+reconnect and shutdown generate no AI messages. Third-party Discord/aiohttp
+payload logs are suppressed, including at DEBUG; application errors use fixed
+safe categories. No scheduler, music or extra slash commands run.
+
 ## OpenAI service contract
 
 Create **one `AIService(settings, store)` per process/event loop**, shared by all
-future user handlers and scheduled jobs. Creation validates the explicit key and
+Discord user handlers and future scheduled jobs. Creation validates the explicit key and
 constructs an `AsyncOpenAI` client, but sends nothing. Imports, settings loading
-and every CLI command leave the SDK uninitialized. Use the service as an async
+and offline commands leave the SDK uninitialized. Use the service as an async
 context manager, or await `aclose()` during shutdown; it stops admission, cancels
 active work and closes HTTP resources. A cancelled shutdown caller still waits
-for owned cleanup. The future Discord lifecycle must own this service.
+for owned cleanup. The Discord lifecycle owns this service.
 
 The only public generation methods are:
 
@@ -315,8 +396,8 @@ Only completed assistant text is accepted. Output is bounded to **1,800 UTF-16
 code units**, including astral characters, with CRLF normalized to LF. Invalid
 Unicode, unsafe controls, directional overrides, unexpected output types,
 refusals, empty output and incomplete/oversized responses produce safe categories
-without continuation. Discord mention suppression and message sending remain
-Milestone 4 work; no Discord API is imported here.
+without continuation. The Discord adapter suppresses mentions and enforces the
+delivery boundary; the AI service itself stays independent of Discord.
 
 Results contain an `Outcome`, optional validated text, safe admission denial,
 numeric usage and an `accounting` result. Response text is excluded from result
@@ -359,11 +440,14 @@ abuse-monitoring retention**. [OpenAI data controls](https://developers.openai.c
 Set `ROLFBOT_DATABASE_PATH` to an absolute file path, for example
 `/var/lib/rolfbot/usage.sqlite3` in future production. Keep it **outside release,
 checkout and virtual-environment directories**, in a protected directory owned by
-the service account. Tests use temporary files; optional local development state
-belongs in ignored `runtime/`. Configuration checks validate path syntax only,
-so they do not prove storage is writable. No command creates a database today.
+the service account. Tests use temporary files; local live-test state should use
+`$HOME/.local/state/rolfbot/usage.sqlite3`. CLI live/provisioning commands reject
+paths resolving inside the application package, known checkout/release trees or
+Python environment, including symlink aliases. The operator must keep any other
+release directories separate as well. `check-config` validates syntax only.
 
-Explicit one-time provisioning from async application/setup code is:
+Use `python -m rolfbot init-db` for deliberate first-time provisioning. It needs
+no credentials and sends nothing. The underlying async maintenance API remains:
 
 ```python
 from rolfbot.config import load_settings
@@ -380,9 +464,14 @@ The parent directory must exist; a new database is created with mode `0600`.
 Existing empty, corrupt or incompatible files are refused, never reset. Normal
 operations require an existing database and cannot recreate a missing one.
 **Never automatically provision a missing production database on startup**: first
-validate existing state with `status`, and stop AI work if it is unavailable.
+validate existing state with `validate`, and stop AI work if it is unavailable.
 Only the operator can decide whether first-time provisioning is appropriate.
 Interrupted provisioning may leave an unusable file requiring review.
+`run` and `smoke-test` require a successful existing-file integrity/schema/write
+check, then refuse persistent OpenAI blocks. Neither command creates, migrates,
+resets or clears state. Every later admission/dispatch still checks storage.
+Startup tests file and journal-directory writability with a metadata write inside
+a savepoint, then rolls it back; accounting and block metadata remain unchanged.
 
 Back up accounting and cooldowns together using SQLite's backup API, or stop all
 writers cleanly before copying the database. Do not copy a live database file
@@ -413,18 +502,20 @@ The [roadmap](docs/ROADMAP.md) preserves the intended features:
 
 - An explicitly authorized live smoke test of model access, project attribution
   and response quality; offline validation cannot establish those facts.
-- Wire the implemented AI service into both servers without bypassing admission.
-- Proper Discord slash commands and spontaneous messages approximately every
-  2–7 days; generated scheduled messages share the global API allowance.
+- Validate one guild locally, then enable the second through configuration.
+- Separately authorize deployment to the existing website VM after local
+  acceptance, before developing additional features.
+- Later refine the friend-group personality and add varied spontaneous messages
+  approximately every 2–7 days, only 08:00–00:00 Europe/Oslo, sharing global quota.
 - Optional voice music, subject to the [YouTube research](docs/YOUTUBE_RESEARCH.md)
   and future host-specific tests.
 - Tested release/deployment and owner-managed billing safeguards before live use.
 
-**Next: Milestone 4, Discord integration, alongside the separately authorized
-live smoke-test gate for Milestone 3.**
+**Next: the owner's local live smoke/Discord checks, then separately authorized
+deployment of the minimal MVP.**
 The owner reports that the Rolfbot project, intended GPT-6 Luna model, restricted
 key, $2 enforced monthly limit, $1 alert and $5 prepaid credit with auto-recharge
 disabled are configured. These account settings were not inspected or changed.
-Live API tests still require separate authorization. Music, Discord, scheduling
-and deployment remain disabled. Temporary media will belong under `downloads/`;
+The agent has not executed live tests; the owner explicitly opts in using the
+documented commands. Music, scheduling and deployment remain deferred. Temporary media will belong under `downloads/`;
 intentional assets and fixtures belong in `assets/` and `tests/fixtures/`.

@@ -1,5 +1,6 @@
 """Explicit, environment-only settings; no file, database or network setup."""
 
+import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -16,6 +17,12 @@ class ConfigurationError(ValueError):
     """A safe, actionable configuration error containing no supplied values."""
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class GuildChannels:
+    guild_id: str
+    channel_ids: frozenset[str]
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     log_level: str
@@ -25,6 +32,43 @@ class Settings:
     database_path: Path | None = field(default=None, repr=False)
     openai_api_key: str | None = field(default=None, repr=False)
     discord_bot_token: str | None = field(default=None, repr=False)
+    guild_channels: tuple[GuildChannels, ...] = field(default=(), repr=False)
+
+
+def guild_channels(value: str) -> tuple[GuildChannels, ...]:
+    """Private JSON mapping of canonical guild IDs to nonempty channel-ID lists."""
+    from rolfbot.usage import valid_discord_id
+
+    def unique_object(pairs):
+        result = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError("Duplicate key")
+            result[key] = item
+        return result
+
+    try:
+        parsed = json.loads(value, object_pairs_hook=unique_object)
+        if not isinstance(parsed, dict) or not parsed:
+            raise ValueError("Expected mapping")
+        result = []
+        all_channels = set()
+        for guild, channels in parsed.items():
+            if (
+                not valid_discord_id(guild) or not isinstance(channels, list)
+                or not channels or any(not valid_discord_id(item) for item in channels)
+                or len(set(channels)) != len(channels)
+                or all_channels.intersection(channels)
+            ):
+                raise ValueError("Invalid mapping")
+            all_channels.update(channels)
+            result.append(GuildChannels(guild, frozenset(channels)))
+        return tuple(result)
+    except (ValueError, TypeError, RecursionError):
+        raise ConfigurationError(
+            "ROLFBOT_GUILD_CHANNELS must be a nonempty JSON object mapping unique "
+            "guild ID strings to lists of unique channel ID strings."
+        ) from None
 
 
 def database_path(value: str) -> Path:
@@ -80,7 +124,7 @@ def load_settings(
 ) -> Settings:
     """Load only implemented settings; requirements validate but never enable clients.
 
-    Offline callers leave both requirements false. Future integrations must
+    Offline callers leave both requirements false. Live integrations must
     explicitly request their credentials; loading settings creates no client.
     """
     source = os.environ if environ is None else environ
@@ -115,6 +159,10 @@ def load_settings(
         discord_bot_token=_credential(
             source, "DISCORD_BOT_TOKEN", required=require_discord
         ),
+        guild_channels=(
+            guild_channels(source["ROLFBOT_GUILD_CHANNELS"])
+            if "ROLFBOT_GUILD_CHANNELS" in source else ()
+        ),
     )
 
 
@@ -133,3 +181,14 @@ def require_openai_key(settings: Settings) -> str:
     )
     assert key is not None
     return key
+
+
+def require_discord_settings(settings: Settings) -> str:
+    token = _credential(
+        {"DISCORD_BOT_TOKEN": settings.discord_bot_token or ""},
+        "DISCORD_BOT_TOKEN", required=True,
+    )
+    if not settings.guild_channels:
+        raise ConfigurationError("ROLFBOT_GUILD_CHANNELS is required to run Discord.")
+    assert token is not None
+    return token

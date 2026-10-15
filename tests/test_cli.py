@@ -13,7 +13,7 @@ def test_help_needs_no_configuration_or_credentials(cli_process):
     result = cli_process("--help", extra_env={"ROLFBOT_TIMEZONE": "invalid"})
     assert result.returncode == 0
     assert "check-config" in result.stdout
-    assert "disabled" in result.stdout
+    assert "smoke-test" in result.stdout and "init-db" in result.stdout
     assert result.stderr == ""
 
 
@@ -53,17 +53,15 @@ def test_argument_errors_never_echo_arbitrary_input(cli_process, arguments):
     assert "synthetic-secret" not in result.stdout + result.stderr
 
 
-def test_run_always_refuses_even_with_credentials_and_future_settings(cli_process):
+def test_run_refuses_invalid_guild_mapping_before_connecting(cli_process):
     result = cli_process("run", extra_env={
         "OPENAI_API_KEY": "synthetic-openai-value",
         "DISCORD_BOT_TOKEN": "synthetic-discord-value",
         "OPENAI_MODEL": "gpt-6-luna",
         "ROLFBOT_GUILD_CHANNELS": "{}",
     })
-    assert result.returncode == 3
-    assert "startup_refused" in result.stderr
-    assert "Milestone 4" in result.stderr
-    assert "event=shutdown" in result.stderr
+    assert result.returncode == 2
+    assert "ROLFBOT_GUILD_CHANNELS" in result.stderr
     assert "synthetic-" not in result.stdout + result.stderr
 
 
@@ -107,7 +105,7 @@ assert not {'discord', 'openai', 'youtube_dl', 'yt_dlp'} & sys.modules.keys()
 
 def test_check_config_and_run_never_create_database(cli_process, tmp_path):
     path = tmp_path / "unused.sqlite3"
-    for command, code in (("check-config", 0), ("run", 3)):
+    for command, code in (("check-config", 0), ("run", 2)):
         result = cli_process(command, extra_env={"ROLFBOT_DATABASE_PATH": str(path)})
         assert result.returncode == code
         assert str(path) not in result.stdout + result.stderr
@@ -124,14 +122,14 @@ def test_invalid_database_path_diagnostic_is_safe(cli_process):
 def test_installed_package_has_only_approved_runtime_dependencies():
     requirements = importlib.metadata.requires("rolfbot") or []
     runtime = {requirement for requirement in requirements if 'extra == "dev"' not in requirement}
-    assert runtime == {"openai==3.31.0", "httpx2==2.13.1"}
-    for name in ("discord.py", "yt-dlp", "youtube_dl"):
+    assert runtime == {"openai==3.31.0", "httpx2==2.13.1", "discord.py==2.7.1"}
+    for name in ("yt-dlp", "youtube_dl"):
         with pytest.raises(importlib.metadata.PackageNotFoundError):
             importlib.metadata.distribution(name)
 
 
 def test_unexpected_failure_is_safe_and_restores_sigterm(monkeypatch, capsys):
-    async def broken(command):
+    async def broken(command, settings):
         raise RuntimeError("private failure detail")
 
     monkeypatch.setattr(cli, "_execute", broken)
