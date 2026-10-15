@@ -4,14 +4,19 @@ Rolfbot is a small Python Discord bot project for a friend group across two
 servers, with roughly 10–12 people in the larger server. Its intended personality
 is friendly, playful and useful.
 
-**The owner reports a successful live OpenAI smoke test and `/rolfbot` test in a
-private Discord server.** Natural mentions and replies with bounded conversation
-memory are now implemented and tested offline, ready for local live testing.
+**The owner reports successful local live smoke, slash-command, mention and
+reply-chain tests**, including conversation isolation and cooldown enforcement.
+Natural mentions and bounded conversation memory are implemented and verified
+offline. **Gate A staging is complete on Vultr; Gate B is NOT approved.** Rolfbot
+is installed but remains stopped, without boot enablement and persistently masked.
+Protected credentials are staged; the production database is absent and the
+unchanged local database remains authoritative. See [DEPLOYMENT.md](docs/DEPLOYMENT.md)
+for the exact release, Ubuntu validation results and required cutover approval.
 Both interaction paths use the same OpenAI service and persistent SQLite admission.
-The agent has not independently verified the live results or project attribution,
-used real credentials, or deployed anything. Scheduling and music remain inactive.
-Follow the [local test runbook](docs/LOCAL_TEST.md) for the new conversation checks;
-production deployment is the next separate milestone after local acceptance.
+The agent has not independently verified live results or project attribution.
+Staging made no live Discord/OpenAI connections. Scheduling and music remain inactive.
+The [local test runbook](docs/LOCAL_TEST.md) remains the reference for local checks.
+Live cutover requires separate explicit owner approval at Gate B.
 
 ## Architecture
 
@@ -49,9 +54,10 @@ to services. No third-party runtime dependency was added for usage protection.
 ## Python and dependencies
 
 Supported target: **Linux with CPython 3.12 or 3.13**. Python 3.12 is the preferred
-future production baseline because [Ubuntu 24.04 provides it](https://ubuntu.com/developers/docs/reference/availability/python/).
+production baseline because [Ubuntu 24.04 provides it](https://ubuntu.com/developers/docs/reference/availability/python/).
 The foundation was tested locally on Linux x86_64 with **3.12.15 and 3.13.16**;
-this is not a claim of VM/deployment validation. Other Python minor versions are
+the 432 application tests also pass on the staged Ubuntu VM with **3.12.3**.
+Production live acceptance remains pending. Other Python minor versions are
 outside the declared range until tested.
 
 Direct runtime dependencies are **openai 3.31.0**, **httpx2 2.13.1** and
@@ -586,18 +592,20 @@ The [roadmap](docs/ROADMAP.md) preserves the intended features:
 - Locally validate the new mention/reply behavior on top of the owner-reported
   successful smoke/slash tests; verify project attribution privately if still needed.
 - Validate conversations in one guild, then enable the second through configuration.
-- Separately authorize deployment to the existing website VM after local
-  acceptance, before developing additional features.
+- Review completed website-VM staging and separately authorize Gate B accounting
+  cutover and production activation before developing additional features.
 - Later refine the friend-group personality and add varied spontaneous messages
   approximately every 2–7 days, only 08:00–00:00 Europe/Oslo, sharing global quota.
 - Optional voice music, subject to the [YouTube research](docs/YOUTUBE_RESEARCH.md)
   and future host-specific tests.
 - Tested release/deployment and owner-managed billing safeguards before live use.
 
-**Next: local live conversation checks, then separately authorized deployment.**
+**Next: Gate B approval for accounting cutover and live activation, including
+confirmation that every old VM instance is stopped.** See the [deployment runbook](docs/DEPLOYMENT.md).
 The owner reports that the Rolfbot project, intended GPT-6 Luna model, restricted
 key, $2 enforced monthly limit, $1 alert and $5 prepaid credit with auto-recharge
 disabled are configured. These account settings were not inspected or changed.
 The agent has not executed live tests; the owner performs any further live checks
-using the runbook. Music, scheduling and deployment remain deferred. Temporary media will belong under `downloads/`;
+using the runbook. Music, scheduling and live activation remain deferred.
+Temporary media will belong under `downloads/`;
 intentional assets and fixtures belong in `assets/` and `tests/fixtures/`.

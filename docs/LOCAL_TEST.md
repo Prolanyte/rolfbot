@@ -1,11 +1,14 @@
 # Local OpenAI and Discord validation
 
-The owner reports a **successful live OpenAI smoke test and `/rolfbot` in a private
-Discord server**. Natural mentions/replies and bounded memory are implemented
-and tested offline; their local live acceptance is next. Project attribution,
-second-guild rollout and production readiness have not been independently verified.
-The agent has not executed live commands, read real credentials, changed Discord
-settings, or accessed Vultr. Deployment remains a separate task.
+The owner reports **successful local live smoke, slash, mention and reply-chain
+tests**, including follow-ups without another mention, conversation isolation and
+the 30-second cooldown. Project attribution, second-guild rollout and production
+readiness have not been independently verified. The agent has not sent live
+OpenAI/Discord requests. Approved Gate A staging on Vultr is complete, including
+protected credential transfer and offline validation without displaying values.
+Rolfbot remains stopped and masked; no production database exists. The unchanged
+local database remains authoritative. See [DEPLOYMENT.md](DEPLOYMENT.md) for the
+staging evidence and pending Gate B approval.
 
 For the existing working installation, keep its credentials and usage database;
 do not repeat provisioning or the paid smoke test just for this enhancement.
@@ -263,18 +266,20 @@ cleared. Restart using `run`, **not** `init-db`; quotas and blocks persist.
   3.13 used an editable install and Python 3.12 a regular wheel. Import/CLI network
   tripwires, mocked real-SDK requests, SQLite admission checks and
   `git diff --check` passed. No real credentials or live services were used.
-- Base commit: `6a4a1979a8ce1a480ce979f3d2881c48aff4a4d5` (working minimal MVP).
-- **Intended deployment commit SHA: pending an owner-authorized commit of this
-  conversation enhancement.** The base SHA does not contain these uncommitted
-  changes. No commit or push was authorized in this task.
+- Reviewed application release candidate:
+  **`9a4500aa1cc3272471b6492c6c4ec96527ebc7dd`**. It contains the conversation
+  enhancement and matched clean `HEAD`, `main` and the local `origin/main` at
+  deployment preflight. Deployment-only helpers/documentation are separately
+  prepared operational assets, not changes to that application release.
 - Baseline live smoke test and private-guild `/rolfbot`: **owner-reported success**.
   The agent has not independently verified those results. Exact test timestamps,
   project attribution, second-guild rollout and live shutdown evidence were not supplied.
-- Mention/reply enhancement: **offline verified; local live checks pending**.
-  Record their date and safe observations before deployment.
+- Mention/reply enhancement: **owner-reported local success**, including bare
+  reply continuation, isolation and cooldowns. Exact test timestamps were not
+  supplied. Production checks remain pending; see the deployment evidence record.
 
-Before later deployment, commit the reviewed implementation with separate
-authorization, record the resulting `git rev-parse HEAD` as the intended release
-SHA, and verify that exact clean revision. Deployment to the existing Vultr
-website VM is a separate task after local acceptance. Personality refinements,
+Deployment uses the exact reviewed application commit and checksummed artifacts,
+never an arbitrary dirty working tree. The existing Vultr website VM now has the
+staged release, with 432 application tests passing on Ubuntu Python 3.12.3.
+Live cutover awaits Gate B approval. Personality refinements,
 spontaneous messages and optional music follow deployment; see the [roadmap](ROADMAP.md).

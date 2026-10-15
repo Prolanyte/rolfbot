@@ -1,0 +1,57 @@
+[Unit]
+Description=Rolfbot Discord friend-group bot
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=exec
+User=rolfbot
+Group=rolfbot
+WorkingDirectory=/opt/rolfbot/current
+EnvironmentFile=/etc/rolfbot/rolfbot.env
+ExecStart=/opt/rolfbot/current/.venv/bin/python -I -B -u -m rolfbot run
+Restart=on-failure
+RestartSec=20s
+SuccessExitStatus=130 143
+KillSignal=SIGTERM
+KillMode=control-group
+TimeoutStopSec=45s
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rolfbot
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/rolfbot
+
+# Proposed limits: verify the measured runtime and Ubuntu staging results before
+# activation. Leave most of the single-core VM available to the website.
+MemoryAccounting=yes
+MemoryHigh=192M
+MemoryMax=256M
+MemorySwapMax=64M
+CPUAccounting=yes
+CPUQuota=50%
+CPUWeight=10
+IOWeight=10
+TasksMax=64
+LimitNOFILE=256
+
+[Install]
+WantedBy=multi-user.target

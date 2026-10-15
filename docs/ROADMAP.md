@@ -5,9 +5,13 @@ validation: **15 October 2026**. Phase 0 and Milestones 1–2 are complete.
 **The owner reports a successful live OpenAI smoke test and private-guild
 `/rolfbot` test.** Milestone 3 and the minimal Discord MVP (4a) provide the working
 baseline. Natural mentions, reply continuation and bounded ephemeral memory are
-now implemented and tested offline; their local live check precedes deployment.
-The agent has not independently verified live results or project attribution,
-used real credentials, connected to Discord, or performed deployment.
+now implemented, tested offline and reported working locally by the owner,
+including bare follow-ups, isolation and cooldowns. **Approved Gate A staging on
+Vultr is complete; Gate B is NOT approved.** Rolfbot is installed but remains
+stopped, without boot enablement and persistently masked. Credentials are staged;
+production SQLite is absent and the unchanged local database remains authoritative.
+The agent has not independently verified live AI results or project attribution;
+staging made no live Discord/OpenAI connections. See [DEPLOYMENT.md](DEPLOYMENT.md).
 See the [README](../README.md) for tested setup and commands, and
 [YouTube research](YOUTUBE_RESEARCH.md) for the conditional music decision.
 
@@ -24,18 +28,19 @@ friend-group personality without adding unnecessary infrastructure or tools.
 | 2. Usage protection — complete | Enforce persistent quotas before paid access | Milestone 1 | Atomic reservation, lifecycle, restart, calendar and concurrency tests pass on Python 3.12/3.13 |
 | 3. OpenAI — owner reports smoke-test success | Deliver bounded asynchronous AI requests | Milestones 1–2; owner-managed billing configured | Original 258-test offline suite retained; project attribution not independently verified |
 | 4a. Minimal Discord MVP — owner reports private-guild success | One explicit /rolfbot command, opt-in smoke test and safe startup | Milestones 1–3 | Original 352-test MVP baseline retained |
-| 4a enhancement — implemented offline | Natural mentions, reply chains and bounded ephemeral context | Working minimal MVP | 432 tests on Python 3.12/3.13; owner checks new conversation behavior locally |
-| 6. Release readiness — next after conversation validation | Record the exact reviewed release SHA and local evidence | Milestone 4a enhancement; owner authorization to commit | Tests, configuration and operations review complete for the enabled feature set |
-| 7. Production deployment — separately authorized | Deploy the minimal MVP independently of the website | Local live acceptance and minimal release readiness | Service, restart, resource limits and rollback verified; website unaffected |
+| 4a enhancement — owner reports local success | Natural mentions, reply chains and bounded ephemeral context | Working minimal MVP | 432 application tests on Python 3.12/3.13; local conversation checks reported successful |
+| 6. Release readiness — staged candidate verified | Exact SHA `9a4500aa1cc3272471b6492c6c4ec96527ebc7dd` and safe artifacts | Milestone 4a enhancement | Local provenance/tests and 432 Ubuntu application tests pass; unit and hardened offline probe pass |
+| 7. Production deployment — gate B pending | Isolated service alongside the website | Gate A staging complete; separate cutover approval required | Masked installation and credentials verified; accounting transfer and live acceptance pending |
 | 4b. Personality and scheduling — after deployment | Friend-group refinement and varied spontaneous messages | Stable deployed MVP | Quiet hours, cadence, novelty, restart and quota tests pass |
 | 5. Optional music — later | Decide feasibility, then implement if approved | Stable MVP; research and playback gates | Local and Vultr evidence plus acceptable terms/maintenance decision, or music disabled |
 
 **Current delivery order:** the owner has validated the small working bot and
 requested natural conversations before production. Validate that enhancement
 locally, then deploy to the existing Vultr website VM with separate authorization.
-Scheduling, personalized inside jokes and music follow deployment. This task
-does not deploy. The [local runbook](LOCAL_TEST.md) records tested versions, the
-base commit and the pending intended-deployment SHA; no commit/push was authorized.
+Scheduling, personalized inside jokes and music follow production acceptance.
+The [local runbook](LOCAL_TEST.md) records tested versions and the reviewed
+release; no commit/push was authorized. Gate B approval is required before
+transferring accounting or activating the staged release.
 
 ## 1. Runtime foundation — complete
 
@@ -382,9 +387,10 @@ music, tools, a dashboard and an HTTP server remain unimplemented.
   Offline installs, compilation and dependency checks pass. No new dependencies,
   environment settings, SQLite schema change, paid request or external test call.
 
-**Next:** owner performs the few local conversation checks in
-[LOCAL_TEST.md](LOCAL_TEST.md#8a-exercise-natural-conversations), then a separately
-authorized production deployment. History increases input-token costs; retain
+**Owner now reports these local checks succeeded; approved staging is complete.**
+Next: review the results in [DEPLOYMENT.md](DEPLOYMENT.md) and separately approve
+Gate B before live cutover.
+History increases input-token costs; retain
 the owner-managed $2 monthly spending controls. No commit or push was authorized.
 
 ## 4b. Personalized personality and varied spontaneous messages — deferred
@@ -477,7 +483,15 @@ commit SHA before deployment; never label an uncommitted workspace as a release.
 nginx as a static site. This follows local acceptance of the working MVP and
 conversation enhancement, and precedes scheduling/personality/music work. No
 production access or changes were made in Phase 0, Milestones 1–3, the minimal
-MVP implementation or the conversation enhancement.
+MVP implementation or the conversation enhancement. The deployment task has since
+completed approved staging on Ubuntu 24.04.5: one vCPU, 955 MiB RAM, with about
+568 MiB available and 16 GiB free disk after validation. Website/recovery services
+remain healthy, and both hostnames return HTTPS 200. The exact release and protected
+credentials are installed; the service remains stopped and persistently masked.
+All 432 application tests pass on Ubuntu Python 3.12.3, and the hardened offline
+probe used about 72.4 MiB peak RSS under the proposed 256 MiB limit. No production
+database exists and no live cutover occurred. The [deployment runbook](DEPLOYMENT.md)
+records provenance, staging evidence, rollback and the pending Gate B checks.
 
 - Run as a dedicated, unprivileged Linux service user with an isolated virtual
   environment and versioned release directories. Keep persistent SQLite state
